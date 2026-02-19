@@ -277,12 +277,14 @@ export async function runTodoUi(
       );
       const detailView = {
         render(width: number) {
+          const menuLines = detailMenu.render(width);
           if (!showPreview) {
-            return detailMenu.render(width);
+            const base = selectors[source] ?? currentSelector();
+            const target = base ? base.render(width).length : 0;
+            return matchHeight(menuLines, target);
           }
           const maxHeight = Math.max(5, Math.floor((uiTui.terminal.rows || 24) * 0.4));
           const previewLines = preview.render(width, maxHeight);
-          const menuLines = detailMenu.render(width);
           return [...previewLines, ...menuLines];
         },
         invalidate() {
