@@ -22,20 +22,27 @@ function normalizePaths(paths: string[]): string[] {
   return list;
 }
 
+function legacy(value: string): boolean {
+  return /^[a-f0-9]{8}$/i.test(value);
+}
+
+function resolve(base: string, value: string, type?: "prds" | "specs" | "todos"): string {
+  if (path.isAbsolute(value)) return value;
+  if (value.includes("/")) return base ? path.resolve(base, value) : value;
+  if (!type || !legacy(value)) return base ? path.resolve(base, value) : value;
+  const file = path.join(".pi", "plans", type, `${value}.md`);
+  return base ? path.resolve(base, file) : file;
+}
+
 export function resolveLinkedPaths(links?: Links): string[] {
   const base = links?.root_abs ?? "";
-  const rel = [
-    ...(links?.prds ?? []),
-    ...(links?.specs ?? []),
-    ...(links?.todos ?? []),
-    ...(links?.reads ?? []),
+  const values = [
+    ...(links?.prds ?? []).map((item) => resolve(base, item, "prds")),
+    ...(links?.specs ?? []).map((item) => resolve(base, item, "specs")),
+    ...(links?.todos ?? []).map((item) => resolve(base, item, "todos")),
+    ...(links?.reads ?? []).map((item) => resolve(base, item)),
   ];
-  return normalizePaths(
-    rel.map((item) => {
-      if (!base) return item;
-      return path.resolve(base, item);
-    }),
-  );
+  return normalizePaths(values);
 }
 
 function readBlock(filePath: string, links?: Links): string {
