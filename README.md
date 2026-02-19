@@ -1,6 +1,6 @@
-# pi-todos
+# pi-todomaster
 
-`pi-todos` adds a checklist-first planning system to Pi.
+`pi-todomaster` adds a checklist-first planning system to Pi.
 
 It provides an interactive `/todo` UI for managing three document types:
 

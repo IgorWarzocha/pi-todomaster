@@ -1,7 +1,7 @@
 {
-  "name": "@howaboua/pi-todos",
+  "name": "@howaboua/pi-todomaster",
   "version": "0.1.0",
-  "description": "Todo manager extension",
+  "description": "TodoMaster extension for Pi",
   "keywords": [
     "pi-extension",
     "pi-package"
