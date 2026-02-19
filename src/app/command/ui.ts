@@ -235,187 +235,8 @@ export async function runTodoUi(
       const fill = Array.from({ length: target - lines.length }, () => "⠀");
       return [...head, ...fill, last];
     };
-    const openDetailOverlay = async (
-      record: TodoRecord,
-      source: TodoListMode,
-      onBack?: () => void,
-    ): Promise<void> => {
-      const rows = uiTui.terminal.rows || 24;
-      const width = uiTui.terminal.columns || 80;
-      const base = active ? active.render(width).length : 14;
-      const row = Math.max(0, rows - base);
-      let leaderActive = false;
-      let leaderTimer: ReturnType<typeof setTimeout> | null = null;
-      const state: {
-        action:
-          | "none"
-          | "work"
-          | "review-item"
-          | "refine"
-          | "complete"
-          | "abandon"
-          | "edit-checklist";
-        related: TodoRecord | null;
-      } = {
-        action: "none",
-        related: null,
-      };
-      const leaderText = record.checklist?.length
-        ? "More options: w work • y review • r refine • c complete • a abandon • e edit checklist"
-        : "More options: w work • y review • r refine • c complete • a abandon";
-      const baseText = "Esc back • j/k scroll • /? related • o open related • Ctrl+X more options";
-      await ctx.ui.custom<void>(
-        (overlayTui, overlayTheme, _overlayKb, doneOverlay) => {
-          const preview = new TodoDetailPreviewComponent(
-            ensureTui(overlayTui),
-            overlayTheme,
-            record,
-          );
-          const clearLeader = () => {
-            if (leaderTimer) clearTimeout(leaderTimer);
-            leaderTimer = null;
-            leaderActive = false;
-            overlayTui.requestRender();
-          };
-          const startLeader = () => {
-            if (leaderActive) return clearLeader();
-            leaderActive = true;
-            if (leaderTimer) clearTimeout(leaderTimer);
-            leaderTimer = setTimeout(() => clearLeader(), 2000);
-            overlayTui.requestRender();
-          };
-          return {
-            render(viewWidth: number) {
-              const maxHeight = Math.max(10, Math.floor((overlayTui.terminal.rows || 24) * 0.62));
-              const lines = preview.render(viewWidth, maxHeight);
-              const hint = overlayTheme.fg("dim", leaderActive ? leaderText : baseText);
-              return [...lines, "", hint];
-            },
-            invalidate() {
-              preview.invalidate();
-            },
-            handleInput(data: string) {
-              if (leaderActive) {
-                if (data === "w" || data === "W") {
-                  state.action = "work";
-                  doneOverlay();
-                  return;
-                }
-                if (data === "y" || data === "Y") {
-                  state.action = "review-item";
-                  doneOverlay();
-                  return;
-                }
-                if (data === "r" || data === "R") {
-                  state.action = "refine";
-                  doneOverlay();
-                  return;
-                }
-                if (data === "c" || data === "C") {
-                  state.action = "complete";
-                  doneOverlay();
-                  return;
-                }
-                if (data === "a" || data === "A") {
-                  state.action = "abandon";
-                  doneOverlay();
-                  return;
-                }
-                if ((data === "e" || data === "E") && record.checklist?.length) {
-                  state.action = "edit-checklist";
-                  doneOverlay();
-                  return;
-                }
-                clearLeader();
-                return;
-              }
-              if (data === "\u0018" || matchesKey(data, Key.ctrl("x"))) return startLeader();
-              if (
-                matchesKey(data, Key.escape) ||
-                data === "\u001b" ||
-                data === "b" ||
-                data === "B"
-              ) {
-                doneOverlay();
-                return;
-              }
-              if (data === "j" || data === "J") {
-                preview.scrollBy(1);
-                overlayTui.requestRender();
-                return;
-              }
-              if (data === "k" || data === "K") {
-                preview.scrollBy(-1);
-                overlayTui.requestRender();
-                return;
-              }
-              if (data === "/" || data === "]") {
-                if (!preview.hasRelated()) return;
-                preview.moveRelated(1);
-                overlayTui.requestRender();
-                return;
-              }
-              if (data === "?" || data === "[") {
-                if (!preview.hasRelated()) return;
-                preview.moveRelated(-1);
-                overlayTui.requestRender();
-                return;
-              }
-              if (data === "o" || data === "O") {
-                if (!preview.hasRelated()) return;
-                const item = preview.getSelectedRelated();
-                if (!item) {
-                  ctx.ui.notify("Related item not found", "error");
-                  return;
-                }
-                state.related = item;
-                doneOverlay();
-              }
-            },
-            focused: true,
-          };
-        },
-        {
-          overlay: true,
-          overlayOptions: {
-            anchor: "top-left",
-            row,
-            col: 0,
-            width: "100%",
-            maxHeight: "80%",
-          },
-        },
-      );
-      if (state.related) {
-        return openDetailOverlay(
-          state.related,
-          source,
-          () => void openDetailOverlay(record, source, onBack),
-        );
-      }
-      if (state.action === "edit-checklist") return showEditChecklistInput(record, source);
-      if (state.action === "none") {
-        if (onBack) onBack();
-        return;
-      }
-      const result = await applyTodoAction(
-        todosDir,
-        ctx,
-        refresh,
-        done,
-        record,
-        state.action,
-        setPrompt,
-      );
-      if (result !== "stay") return;
-      const updated = await resolve(record);
-      if (!updated) {
-        setActive(selectors[source] ?? currentSelector());
-        return;
-      }
-      showDetailView(updated, source, onBack);
-    };
     const showDetailView = (record: TodoRecord, source: TodoListMode, onBack?: () => void) => {
+      let showPreview = true;
       const detailFooter = onBack ? `${footer(record)} • b back` : footer(record);
       const leaderFooter = leader(record);
       let leaderActive = false;
@@ -436,10 +257,16 @@ export async function runTodoUi(
         detailMenu.setFooter(leaderFooter, "warning");
         tui.requestRender();
       };
+      const preview = new TodoDetailPreviewComponent(uiTui, theme, record);
       const detailMenu = new TodoActionMenuComponent(
         theme,
         record,
         (action) => {
+          if (action === "view") {
+            showPreview = !showPreview;
+            tui.requestRender();
+            return;
+          }
           void handleSelection(record, action, source);
         },
         () => setActive(selectors[source] ?? currentSelector()),
@@ -450,11 +277,18 @@ export async function runTodoUi(
       );
       const detailView = {
         render(width: number) {
-          const base = selectors[source] ?? currentSelector();
-          const target = base ? base.render(width).length : 0;
-          return matchHeight(detailMenu.render(width), target);
+          if (!showPreview) {
+            const base = selectors[source] ?? currentSelector();
+            const target = base ? base.render(width).length : 0;
+            return matchHeight(detailMenu.render(width), target);
+          }
+          const maxHeight = Math.max(5, Math.floor((uiTui.terminal.rows || 24) * 0.4));
+          const previewLines = preview.render(width, maxHeight);
+          const menuLines = detailMenu.render(width);
+          return [...previewLines, "", ...menuLines];
         },
         invalidate() {
+          preview.invalidate();
           detailMenu.invalidate();
         },
         handleInput(data: string) {
@@ -467,9 +301,32 @@ export async function runTodoUi(
           }
           if (data === "\u0018" || matchesKey(data, Key.ctrl("x"))) return startLeader();
           if (data === "b" && onBack) return back();
-          if (data === "v" || data === "V") return void openDetailOverlay(record, source, onBack);
-          if (data === "k") return detailMenu.handleInput("\u001b[A");
-          if (data === "j") return detailMenu.handleInput("\u001b[B");
+          if (matchesKey(data, Key.escape)) return back();
+          if (data === "v" || data === "V") {
+            showPreview = !showPreview;
+            tui.requestRender();
+            return;
+          }
+          if (data === "k") {
+            const result = detailMenu.handleInput("\u001b[A");
+            tui.requestRender();
+            return result;
+          }
+          if (data === "j") {
+            const result = detailMenu.handleInput("\u001b[B");
+            tui.requestRender();
+            return result;
+          }
+          if (showPreview && (data === "w" || data === "W")) {
+            preview.scrollBy(-1);
+            tui.requestRender();
+            return;
+          }
+          if (showPreview && (data === "s" || data === "S")) {
+            preview.scrollBy(1);
+            tui.requestRender();
+            return;
+          }
           detailMenu.handleInput(data);
         },
         focused,
@@ -591,7 +448,7 @@ export async function runTodoUi(
       action: TodoMenuAction,
       source: TodoListMode,
     ) => {
-      if (action === "view") return void openDetailOverlay(record, source);
+      if (action === "view") return setActive(selectors[source] ?? currentSelector());
       if (action === "edit-checklist") return showEditChecklistInput(record, source);
       if (action === "attach-links") return void showAttachInput(record, source);
       if (action === "validate-links") return void showValidateInput(record, source);
