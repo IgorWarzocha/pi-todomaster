@@ -31,7 +31,7 @@ export class TodoActionMenuComponent extends Container {
     this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
     this.addChild(new Text(theme.fg("accent", theme.bold(`Actions for "${title}"`))));
 
-    this.selectList = new SelectList(entries, 9, {
+    this.selectList = new SelectList(entries, 15, {
       selectedPrefix: (text) => theme.fg("accent", text),
       selectedText: (text) => theme.fg("accent", text),
       description: (text) => theme.fg("muted", text),
@@ -43,9 +43,6 @@ export class TodoActionMenuComponent extends Container {
     this.selectList.onCancel = () => this.onCancelCallback();
 
     this.addChild(this.selectList);
-    for (let index = entries.length; index < 9; index += 1) {
-      this.addChild(new Text("⠀", 0, 0));
-    }
     this.footerText = new Text(theme.fg("dim", opts?.footer ?? "Enter to confirm • Esc back"));
     this.addChild(this.footerText);
     this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
