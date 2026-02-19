@@ -22,36 +22,13 @@ interface Entry {
   checklist: Array<{ id: string; title: string; done: boolean }>;
 }
 
-function checklist(value: string | undefined): Array<{ id: string; title: string; done: boolean }> {
-  if (!value) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    fail("Invalid --checklist JSON. Expected array of strings or checklist objects.");
-  }
-  if (!Array.isArray(parsed)) fail("Invalid --checklist JSON. Expected array.");
+function checklist(items: string[]): Array<{ id: string; title: string; done: boolean }> {
+  if (!items.length) return [];
   const list: Array<{ id: string; title: string; done: boolean }> = [];
-  for (let index = 0; index < parsed.length; index += 1) {
-    const item = parsed[index];
-    if (typeof item === "string") {
-      const title = item.trim();
-      if (!title) fail("Checklist items MUST NOT be empty.");
-      list.push({ id: `${index + 1}`, title, done: false });
-      continue;
-    }
-    if (typeof item !== "object" || item === null) {
-      fail("Invalid checklist item. Expected string or object.");
-    }
-    const row = item as { id?: unknown; title?: unknown; done?: unknown };
-    if (typeof row.title !== "string" || !row.title.trim()) {
-      fail("Checklist object items MUST include non-empty title.");
-    }
-    list.push({
-      id: typeof row.id === "string" && row.id.trim() ? row.id.trim() : `${index + 1}`,
-      title: row.title.trim(),
-      done: row.done === true,
-    });
+  for (let index = 0; index < items.length; index += 1) {
+    const title = items[index]?.trim();
+    if (!title) fail("Checklist items MUST NOT be empty.");
+    list.push({ id: `${index + 1}`, title, done: false });
   }
   return list;
 }
@@ -107,6 +84,20 @@ function pick(args: string[], names: string[]): string | undefined {
   return undefined;
 }
 
+function picks(args: string[], names: string[]): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (!names.includes(value)) continue;
+    const item = args[index + 1];
+    if (item === undefined || item.startsWith("-")) {
+      fail(`Missing value for ${value}.`);
+    }
+    values.push(item);
+  }
+  return values;
+}
+
 function dir(): string {
   return resolveRoot();
 }
@@ -147,7 +138,9 @@ function enforce(type: Type, args: string[]): void {
       "Do not pass managed flags (agent_rules/worktree/template/links/request/root). Use minimal create inputs only.",
     );
   const checklist = has(args, ["--checklist", "-checklist"]);
-  if (type !== "todo" && checklist) fail("Checklist is only supported for type=todo.");
+  if (checklist) fail("--checklist is unsupported. Use repeated --item flags.");
+  const item = has(args, ["--item", "-item"]);
+  if (type !== "todo" && item) fail("--item is only supported for type=todo.");
 }
 
 function schema(type: Type): string {
@@ -160,7 +153,7 @@ function schema(type: Type): string {
     "tags: <csv> # REQUIRED",
     "body: <markdown> # REQUIRED",
   ];
-  if (type === "todo") lines.push("checklist: <json-array> # REQUIRED");
+  if (type === "todo") lines.push("item: <string> # REQUIRED, repeatable (--item <value>)");
   lines.push("---");
   return lines.join("\n");
 }
@@ -177,9 +170,9 @@ async function create(args: string[]): Promise<void> {
     .map((item) => item.trim())
     .filter(Boolean);
   if (!tags.length) fail("Missing --tags for create command.");
-  const list = checklist(pick(args, ["--checklist", "-checklist"]));
+  const list = checklist(picks(args, ["--item", "-item"]));
   if (value === "todo" && !list.length) {
-    fail("Missing --checklist for create command when type=todo.");
+    fail("Missing --item for create command when type=todo. Repeat --item for each checklist entry.");
   }
   const root = dir();
   const valueId = id();
