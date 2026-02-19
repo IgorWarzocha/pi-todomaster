@@ -172,7 +172,9 @@ async function create(args: string[]): Promise<void> {
   if (!tags.length) fail("Missing --tags for create command.");
   const list = checklist(picks(args, ["--item", "-item"]));
   if (value === "todo" && !list.length) {
-    fail("Missing --item for create command when type=todo. Repeat --item for each checklist entry.");
+    fail(
+      "Missing --item for create command when type=todo. Repeat --item for each checklist entry.",
+    );
   }
   const root = dir();
   const valueId = id();
