@@ -227,6 +227,12 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (!args.length)
     fail("Missing command. Use '-schema <type>' or 'create --type <type> --title <title>'.");
+  if (args[0] === "--help" || args[0] === "-h") {
+    process.stdout.write(
+      "This CLI does not provide interactive help. You MUST run '-schema <type>' (prd|spec|todo) and then call 'create' with required flags.\n",
+    );
+    return;
+  }
   if (args[0] === "--validate" || args[0] === "-validate") {
     const filePath = pick(args, ["--filepath", "-filepath"]);
     if (!filePath) fail("Missing --filepath for validate command.");
