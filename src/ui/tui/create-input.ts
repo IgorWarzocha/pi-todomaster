@@ -1,6 +1,7 @@
-import { Container, Editor, Spacer, Text, TUI, getEditorKeybindings } from "@mariozechner/pi-tui";
+import { Container, Editor, Spacer, Text, TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { esc as keyEsc } from "@howaboua/pi-howaboua-extensions-primitives-sdk";
 
 export class TodoCreateInputComponent extends Container {
   private editor: Editor;
@@ -64,8 +65,7 @@ export class TodoCreateInputComponent extends Container {
   }
 
   handleInput(keyData: string): void {
-    const kb = getEditorKeybindings();
-    if (kb.matches(keyData, "selectCancel")) {
+    if (keyEsc(keyData) || keyData === "\u0003") {
       this.onCancelCallback();
       return;
     }

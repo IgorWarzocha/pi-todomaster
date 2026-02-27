@@ -123,8 +123,8 @@ export class TodoParentSelectComponent extends Container {
       const row = rows[index];
       const mark = active.has(row.id) ? "[x]" : "[ ]";
       const pointer = index === this.selected ? this.theme.fg("accent", "→ ") : "  ";
-      const color = index === this.selected ? "accent" : "text";
-      this.list.addChild(new Text(`${pointer}${mark} ${this.theme.fg(color, row.title)}`, 0, 0));
+      const title = index === this.selected ? this.theme.fg("accent", row.title) : row.title;
+      this.list.addChild(new Text(`${pointer}${mark} ${title}`, 0, 0));
     }
     for (let index = end - start; index < ROWS; index += 1) {
       this.list.addChild(new Text("⠀", 0, 0));
