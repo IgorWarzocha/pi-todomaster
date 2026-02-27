@@ -1,6 +1,7 @@
 import YAML from "yaml";
 import type {
   ChecklistItem,
+  RalphLoopMode,
   TodoFrontMatter,
   TodoLinks,
   TodoRecord,
@@ -24,7 +25,7 @@ export function parseFrontMatter(text: string, idFallback: string): TodoFrontMat
     links: undefined,
     agent_rules: undefined,
     worktree: undefined,
-    ralph_loop: false,
+    ralph_loop_mode: "off",
   };
 
   const trimmed = text.trim();
@@ -59,7 +60,7 @@ export function parseFrontMatter(text: string, idFallback: string): TodoFrontMat
     if (links) data.links = links;
     const worktree = parseWorktree(parsed.worktree);
     if (worktree) data.worktree = worktree;
-    if (typeof parsed.ralph_loop === "boolean") data.ralph_loop = parsed.ralph_loop;
+    data.ralph_loop_mode = parseRalphLoopMode(parsed.ralph_loop_mode, parsed.ralph_loop);
   } catch {
     return data;
   }
@@ -120,6 +121,12 @@ function parseWorktree(value: unknown): TodoWorktree | null {
     enabled: typeof obj.enabled === "boolean" ? obj.enabled : undefined,
     branch: typeof obj.branch === "string" ? obj.branch : undefined,
   };
+}
+
+function parseRalphLoopMode(mode: unknown, legacy: unknown): RalphLoopMode {
+  if (mode === "ralph-loop" || mode === "ralph-loop-linked" || mode === "off") return mode;
+  if (typeof legacy === "boolean") return legacy ? "ralph-loop" : "off";
+  return "off";
 }
 
 export function findJsonObjectEnd(content: string): number {
@@ -204,7 +211,7 @@ export function parseTodoContent(content: string, idFallback: string): TodoRecor
     links: parsed.links,
     agent_rules: parsed.agent_rules,
     worktree: parsed.worktree,
-    ralph_loop: parsed.ralph_loop,
+    ralph_loop_mode: parsed.ralph_loop_mode,
     body: parts.body ?? "",
   };
 }
@@ -223,7 +230,7 @@ export function serializeTodo(todo: TodoRecord): string {
     links: todo.links,
     agent_rules: todo.agent_rules,
     worktree: todo.worktree,
-    ralph_loop: Boolean(todo.ralph_loop),
+    ralph_loop_mode: todo.ralph_loop_mode || "off",
     checklist: todo.checklist?.map((item) => ({
       id: item.id,
       title: item.title,

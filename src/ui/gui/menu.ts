@@ -9,13 +9,13 @@ export function items(todo: TodoRecord, closed: boolean, showView: boolean): Sel
   const assigned = Boolean(todo.assigned_to_session);
   const jump = Boolean(todo.assigned_to_session_file);
   const type = todoType(todo);
-  const ralph = Boolean(todo.ralph_loop);
+  const ralphMode = todo.ralph_loop_mode || "off";
   const base =
     type === "prd"
-      ? prdItems(closed, assigned, jump, showView, ralph)
+      ? prdItems(closed, assigned, jump, showView, ralphMode)
       : type === "spec"
-        ? specItems(closed, assigned, jump, showView, ralph)
-        : todoItems(closed, assigned, jump, showView, ralph);
+        ? specItems(closed, assigned, jump, showView, ralphMode)
+        : todoItems(closed, assigned, jump, showView, ralphMode);
   if (!todo.checklist?.length) return base;
   const insert = base.findIndex((item) => item.value === "refine");
   const entry = {

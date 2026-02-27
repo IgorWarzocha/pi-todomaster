@@ -18,7 +18,7 @@ interface Entry {
   assigned_to_session: null;
   agent_rules: string;
   worktree: { enabled: boolean; branch: string };
-  ralph_loop: boolean;
+  ralph_loop_mode: "off" | "ralph-loop" | "ralph-loop-linked";
   links: { root_abs: string; prds: string[]; specs: string[]; todos: string[] };
   checklist: Array<{ id: string; title: string; done: boolean }>;
 }
@@ -129,6 +129,8 @@ function enforce(type: Type, args: string[]): void {
     "-template",
     "--ralph_loop",
     "-ralph_loop",
+    "--ralph_loop_mode",
+    "-ralph_loop_mode",
     "--links",
     "-links",
     "--request",
@@ -138,7 +140,7 @@ function enforce(type: Type, args: string[]): void {
   ]);
   if (extra)
     fail(
-      "Do not pass managed flags (agent_rules/worktree/ralph_loop/template/links/request/root). Use minimal create inputs only.",
+      "Do not pass managed flags (agent_rules/worktree/ralph_loop/ralph_loop_mode/template/links/request/root). Use minimal create inputs only.",
     );
   const checklist = has(args, ["--checklist", "-checklist"]);
   if (checklist) fail("--checklist is unsupported. Use repeated --item flags.");
@@ -195,7 +197,7 @@ async function create(args: string[]): Promise<void> {
     agent_rules:
       "MUST update checklist done booleans during execution, not after completion. MUST edit only fields and sections explicitly allowed by the active instruction.",
     worktree: { enabled: true, branch: branch(value, title, valueId) },
-    ralph_loop: false,
+    ralph_loop_mode: "off",
     links: valueLinks,
     checklist: value === "todo" ? list : [],
   };

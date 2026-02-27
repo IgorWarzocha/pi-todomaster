@@ -1,29 +1,40 @@
 import type { SelectItem } from "@mariozechner/pi-tui";
+import type { RalphLoopMode } from "../../core/types.js";
 
 export function todoItems(
   closed: boolean,
   assigned: boolean,
   jump: boolean,
   showView: boolean,
-  ralph: boolean,
+  ralphMode: RalphLoopMode,
 ): SelectItem[] {
+  const onLoop = ralphMode === "ralph-loop";
+  const onLinked = ralphMode === "ralph-loop-linked";
   return [
     { value: "work", label: "work", description: "Work on todo" },
     { value: "review-item", label: "review-item", description: "Review selected todo" },
     {
       value: "toggle-ralph-loop",
-      label: ralph ? "[x] ralph-loop" : "[ ] ralph-loop",
-      description: ralph ? "Disable Ralph loop mode" : "Enable Ralph loop mode",
+      label: onLoop ? "[x] ralph-loop" : "[ ] ralph-loop",
+      description: onLoop ? "Disable Ralph loop mode" : "Enable Ralph loop mode",
     },
-    ...(ralph
-      ? [
+    {
+      value: "toggle-ralph-loop-linked",
+      label: onLinked ? "[x] ralph-loop-linked" : "[ ] ralph-loop-linked",
+      description: onLinked ? "Disable linked Ralph loop mode" : "Enable linked Ralph loop mode",
+    },
+    ...(ralphMode === "off"
+      ? []
+      : [
           {
             value: "run-ralph-loop",
             label: "run-ralph-loop",
-            description: "Prepare canonical Ralph loop command",
+            description:
+              ralphMode === "ralph-loop-linked"
+                ? "Stage linked Ralph loop command"
+                : "Stage Ralph loop command",
           },
-        ]
-      : []),
+        ]),
     ...(closed
       ? [
           { value: "reopen", label: "reopen", description: "Reopen todo" },

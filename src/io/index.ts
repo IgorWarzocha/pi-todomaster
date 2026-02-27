@@ -15,7 +15,7 @@ export {
   releaseTodoAssignment,
   deleteTodo,
   reopenTodoForUser,
-  setTodoRalphLoop,
+  setTodoRalphLoopMode,
 } from "./files/actions.js";
 export { filterTodos } from "../core/filter.js";
 export { attachLinks } from "./links/index.js";

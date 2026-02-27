@@ -17,7 +17,7 @@ It provides an interactive `/todo` UI for managing three document types:
 - edit todo checklists directly from the UI
 - claim/release assignment per session
 - use a standardized SDK-based TUI shell shared across extensions
-- mark items as `ralph-loop` and stage a canonical loop command from the action menu
+- mark items as `ralph-loop` or `ralph-loop-linked` and stage a canonical loop command from the action menu
 
 ## Checklist and status model
 

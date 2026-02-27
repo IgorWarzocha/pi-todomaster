@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import type {
+  RalphLoopMode,
   TodoFrontMatter,
   TodoMenuAction,
   TodoQuickAction,
@@ -13,7 +14,7 @@ import {
   getTodoPath,
   releaseTodoAssignment,
   reopenTodoForUser,
-  setTodoRalphLoop,
+  setTodoRalphLoopMode,
   updateTodoStatus,
 } from "../../io/index.js";
 import { ensureWorktree } from "../../core/worktree.js";
@@ -48,6 +49,10 @@ function withWorktree(prompt: string, worktreePath?: string): string {
     `Before any edits, you MUST set your working directory to "${worktreePath}" and keep all repo operations scoped there.\n\n` +
     prompt
   );
+}
+
+function ralphMode(record: TodoFrontMatter): RalphLoopMode {
+  return record.ralph_loop_mode || "off";
 }
 
 async function runWork(
@@ -86,7 +91,8 @@ async function runRalph(
   record: TodoRecord,
   ctx: ExtensionCommandContext,
 ): Promise<"stay" | "exit"> {
-  if (!record.ralph_loop) {
+  const mode = ralphMode(record);
+  if (mode === "off") {
     ctx.ui.notify("Ralph loop is disabled for this item.", "error");
     return "stay";
   }
@@ -96,10 +102,11 @@ async function runRalph(
     return "stay";
   }
   const filePath = getTodoPath(todosDir, record.id, record.type);
-  const prepared = prepareRalphLoop(ctx.cwd, filePath);
+  const linked = mode === "ralph-loop-linked" ? resolveLinkedPaths(record.links) : [];
+  const prepared = prepareRalphLoop(ctx.cwd, mode, filePath, linked);
   ctx.ui.setEditorText(prepared.command);
   ctx.ui.notify(
-    `Ralph loop command staged in editor. Using plan file: ${prepared.planPath.replaceAll("\\", "/")}`,
+    `Ralph loop command staged in editor (${mode}, ${prepared.inputPaths.length} file(s)).`,
     "info",
   );
   return "stay";
@@ -133,17 +140,27 @@ export async function applyTodoAction(
     return "exit";
   }
   if (action === "toggle-ralph-loop") {
-    const next = !record.ralph_loop;
-    const updated = await setTodoRalphLoop(todosDir, record.id, next, ctx);
+    const current = ralphMode(record);
+    const next: RalphLoopMode = current === "ralph-loop" ? "off" : "ralph-loop";
+    const updated = await setTodoRalphLoopMode(todosDir, record.id, next, ctx);
     if ("error" in updated) {
       ctx.ui.notify(updated.error, "error");
       return "stay";
     }
     await refresh();
-    ctx.ui.notify(
-      `${next ? "Enabled" : "Disabled"} Ralph loop for "${record.title || "(untitled)"}"`,
-      "info",
-    );
+    ctx.ui.notify(`Set Ralph loop mode to ${next} for "${record.title || "(untitled)"}"`, "info");
+    return "stay";
+  }
+  if (action === "toggle-ralph-loop-linked") {
+    const current = ralphMode(record);
+    const next: RalphLoopMode = current === "ralph-loop-linked" ? "off" : "ralph-loop-linked";
+    const updated = await setTodoRalphLoopMode(todosDir, record.id, next, ctx);
+    if ("error" in updated) {
+      ctx.ui.notify(updated.error, "error");
+      return "stay";
+    }
+    await refresh();
+    ctx.ui.notify(`Set Ralph loop mode to ${next} for "${record.title || "(untitled)"}"`, "info");
     return "stay";
   }
   if (action === "run-ralph-loop") return runRalph(todosDir, record, ctx);

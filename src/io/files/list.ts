@@ -21,7 +21,7 @@ function toTodo(id: string, content: string, modifiedAt: string): TodoFrontMatte
     links: parsed.links,
     agent_rules: parsed.agent_rules,
     worktree: parsed.worktree,
-    ralph_loop: parsed.ralph_loop,
+    ralph_loop_mode: parsed.ralph_loop_mode,
   };
 }
 
