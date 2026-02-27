@@ -1,4 +1,25 @@
 import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import {
+  back,
+  backtab,
+  create,
+  createAction,
+  createDetail,
+  createList,
+  detailScroll,
+  detailToggle,
+  down,
+  enter,
+  esc,
+  leader,
+  renderDetail,
+  slash,
+  tab,
+  text,
+  up,
+  type Col,
+  type Primitive,
+} from "@howaboua/pi-howaboua-extensions-primitives-sdk";
 import type {
   TodoFrontMatter,
   TodoListMode,
@@ -15,6 +36,9 @@ import {
   buildTodoReviewPrompt,
   buildValidateAuditPrompt,
   deriveTodoStatus,
+  formatChecklistProgress,
+  isTodoClosed,
+  resolveLinkedPaths,
 } from "../../format/index.js";
 import {
   attachLinks,
@@ -25,22 +49,41 @@ import {
   listTodos,
 } from "../../io/index.js";
 import {
-  TodoActionMenuComponent,
   TodoCreateInputComponent,
-  TodoDetailPreviewComponent,
   TodoEditChecklistInputComponent,
-  TodoSelectorComponent,
   SpecPrdSelectComponent,
   TodoParentSelectComponent,
   LinkSelectComponent,
   ValidateSelectComponent,
 } from "../../ui/tui/index.js";
-import { Key, matchesKey, type TUI } from "@mariozechner/pi-tui";
+import type { TUI } from "@mariozechner/pi-tui";
 import { applyTodoAction, handleQuickAction } from "./actions.js";
 import { getCliPath } from "../../core/cli-path.js";
 import { runValidateCli } from "./validate.js";
-import { footer, leader } from "../../ui/gui/detail.js";
+import { items } from "../../ui/gui/menu.js";
 import { runRepairFrontmatter } from "./repair.js";
+
+interface ActiveView {
+  render: (width: number) => string[];
+  invalidate: () => void;
+  handleInput?: (data: string) => void;
+  focused?: boolean;
+}
+
+interface TodoListRow {
+  key: string;
+  title: string;
+  state: string;
+  meta: string;
+  search: string;
+  todo: TodoFrontMatter | null;
+}
+
+interface TodoActionRow {
+  name: TodoMenuAction;
+  label: string;
+  description: string;
+}
 
 function ensureTui(value: unknown): TUI {
   if (!value || typeof value !== "object") throw new Error("Invalid TUI instance");
@@ -52,6 +95,64 @@ function ensureTui(value: unknown): TUI {
   return value as TUI;
 }
 
+function modeLabel(mode: TodoListMode): string {
+  if (mode === "tasks") return "Tasks";
+  if (mode === "prds") return "PRDs";
+  if (mode === "specs") return "Specs";
+  return "Closed";
+}
+
+function createLabel(mode: TodoListMode): string {
+  if (mode === "tasks") return "create todo";
+  if (mode === "prds") return "create PRD";
+  if (mode === "specs") return "create spec";
+  return "create";
+}
+
+function rowState(todo: TodoFrontMatter): string {
+  const status = deriveTodoStatus(todo as TodoRecord).toLowerCase();
+  const progress = formatChecklistProgress(todo);
+  return `${status}${progress}`;
+}
+
+function rowMeta(todo: TodoFrontMatter, sessionId?: string): string {
+  const type = (todo.type || "todo").toUpperCase();
+  const tags = todo.tags.length ? `#${todo.tags.join(" #")}` : "no-tags";
+  const assigned = todo.assigned_to_session
+    ? `assigned:${todo.assigned_to_session === sessionId ? "you" : todo.assigned_to_session}`
+    : "";
+  return [type, tags, assigned].filter(Boolean).join(" • ");
+}
+
+function detailPrimitive(record: TodoRecord): Primitive {
+  const status = deriveTodoStatus(record).toLowerCase();
+  const type = (record.type || "todo").toUpperCase();
+  const tags = record.tags.length ? record.tags.join(", ") : "no tags";
+  const checklist = record.checklist?.length
+    ? [
+        "Checklist",
+        ...record.checklist.map((item, index) => {
+          const done = item.done === true || item.status === "checked";
+          return `${done ? "[x]" : "[ ]"} ${index + 1}. ${item.title}`;
+        }),
+      ]
+    : [];
+  const body = record.body?.trim() ? record.body.split(/\r?\n/) : ["_No details yet._"];
+  const linkLines = record.links
+    ? resolveLinkedPaths(record.links).map((line) => `- ${line.replaceAll("\\", "/")}`)
+    : [];
+  return createDetail({
+    title: record.title || "(untitled)",
+    meta: [`${type} • ${status}`, `tags: ${tags}`],
+    block: linkLines.length ? [`Links (${linkLines.length})`, ...linkLines] : undefined,
+    body: checklist.length ? [...checklist, "", ...body] : body,
+  });
+}
+
+function normalizePath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
 export async function runTodoUi(
   args: string,
   ctx: ExtensionCommandContext,
@@ -59,23 +160,40 @@ export async function runTodoUi(
   const todosDir = getTodosDir(ctx.cwd);
   const todos = await listTodos(todosDir);
   const currentSessionId = ctx.sessionManager.getSessionId();
-  const searchTerm = (args ?? "").trim();
+  const searchTerm = (args ?? "").trim().toLowerCase();
   let nextPrompt: string | null = null;
+
   await ctx.ui.custom<void>((tui, theme, _kb, done) => {
     const uiTui = ensureTui(tui);
-    const selectors: Partial<Record<TodoListMode, TodoSelectorComponent>> = {};
-    const modes: TodoListMode[] = ["tasks", "prds", "specs", "closed"];
-    let index = 0;
-    let all: TodoFrontMatter[] = todos;
-    let createInput: TodoCreateInputComponent | null = null;
-    let editInput: TodoEditChecklistInputComponent | null = null;
-    let active: {
-      render: (width: number) => string[];
-      invalidate: () => void;
-      handleInput?: (data: string) => void;
-      focused?: boolean;
-    } | null = null;
+    const skin = {
+      fg: (color: string, value: string) => theme.fg(color as never, value),
+    };
+
     let focused = false;
+    let active: ActiveView | null = null;
+    let all: TodoFrontMatter[] = todos;
+
+    const modes: TodoListMode[] = ["tasks", "prds", "specs", "closed"];
+    let modeIndex = 0;
+
+    let searchActive = false;
+    let searchQuery = "";
+    let leaderActive = false;
+    let leaderTimer: ReturnType<typeof setTimeout> | null = null;
+    let busy = false;
+
+    let screen: "list" | "actions" = "list";
+    let actionList: ReturnType<typeof createAction<TodoActionRow>> | null = null;
+    let selectedRecord: TodoRecord | null = null;
+    let detail: Primitive | undefined;
+    let showDetail = false;
+
+    const cache = new Map<string, TodoRecord>();
+
+    const setPrompt = (value: string) => {
+      nextPrompt = value;
+    };
+
     const status = (todo: TodoFrontMatter) => deriveTodoStatus(todo as TodoRecord).toLowerCase();
     const isDeprecated = (todo: TodoFrontMatter) => {
       const value = status(todo);
@@ -87,70 +205,262 @@ export async function runTodoUi(
     };
     const modified = (todo: TodoFrontMatter) =>
       Date.parse(todo.modified_at || todo.created_at || "") || 0;
-    const listTasks = (all: TodoFrontMatter[]) =>
-      all.filter(
+    const listTasks = (items: TodoFrontMatter[]) =>
+      items.filter(
         (todo) => (todo.type || "todo") === "todo" && !isDone(todo) && !isDeprecated(todo),
       );
-    const listPrds = (all: TodoFrontMatter[]) =>
-      all.filter((todo) => todo.type === "prd" && !isDone(todo) && !isDeprecated(todo));
-    const listSpecs = (all: TodoFrontMatter[]) =>
-      all.filter((todo) => todo.type === "spec" && !isDone(todo) && !isDeprecated(todo));
-    const listClosed = (all: TodoFrontMatter[]) => {
-      const prds = all
+    const listPrds = (items: TodoFrontMatter[]) =>
+      items.filter((todo) => todo.type === "prd" && !isDone(todo) && !isDeprecated(todo));
+    const listSpecs = (items: TodoFrontMatter[]) =>
+      items.filter((todo) => todo.type === "spec" && !isDone(todo) && !isDeprecated(todo));
+    const listClosed = (items: TodoFrontMatter[]) => {
+      const prds = items
         .filter((todo) => todo.type === "prd" && (isDone(todo) || isDeprecated(todo)))
         .sort((a, b) => modified(b) - modified(a));
-      const specs = all
+      const specs = items
         .filter((todo) => todo.type === "spec" && (isDone(todo) || isDeprecated(todo)))
         .sort((a, b) => modified(b) - modified(a));
-      const tasks = all
+      const tasks = items
         .filter((todo) => (todo.type || "todo") === "todo" && (isDone(todo) || isDeprecated(todo)))
         .sort((a, b) => modified(b) - modified(a));
       return [...prds, ...specs, ...tasks];
     };
-    const setPrompt = (value: string) => {
-      nextPrompt = value;
+
+    const rowsForMode = (mode: TodoListMode): TodoListRow[] => {
+      const scoped =
+        mode === "prds"
+          ? listPrds(all)
+          : mode === "specs"
+            ? listSpecs(all)
+            : mode === "closed"
+              ? listClosed(all)
+              : listTasks(all);
+      const rows = scoped.map((todo) => ({
+        key: todo.id,
+        title: todo.title || "(untitled)",
+        state: rowState(todo),
+        meta: rowMeta(todo, currentSessionId),
+        search:
+          `${todo.title} ${todo.tags.join(" ")} ${status(todo)} ${todo.type || "todo"} ${todo.assigned_to_session || ""}`.toLowerCase(),
+        todo,
+      }));
+      if (mode === "closed") return rows;
+      return [
+        {
+          key: "__create__",
+          title: `+ ${createLabel(mode)}`,
+          state: "",
+          meta: "start new item",
+          search: `create ${mode}`,
+          todo: null,
+        },
+        ...rows,
+      ];
     };
-    const currentMode = (): TodoListMode => modes[index] || "tasks";
-    const currentSelector = () => selectors[currentMode()] ?? null;
-    const setActive = (
-      component: {
-        render: (width: number) => string[];
-        invalidate: () => void;
-        handleInput?: (data: string) => void;
-        focused?: boolean;
-      } | null,
-    ) => {
+
+    const listCols = (): Col<TodoListRow>[] => [
+      { show: true, width: 32, tone: "normal", align: "left", pick: (item) => item.title },
+      { show: true, width: 14, tone: "accent", align: "left", pick: (item) => item.state },
+      { show: true, width: 36, tone: "dim", align: "left", pick: (item) => item.meta },
+    ];
+
+    const createModeList = (mode: TodoListMode, rows: TodoListRow[]) =>
+      createList<TodoListRow>({
+        title: `${modeLabel(mode)} (${rows.filter((item) => item.todo).length})`,
+        items: rows,
+        shortcuts: "tab switch • / search • j/k select • v details • enter actions • ctrl+x more",
+        tier: "top",
+        tab: true,
+        search: true,
+        prompt: false,
+        page: 7,
+        find: (item, query) => item.search.includes(query),
+        intent: (item) => {
+          if (!item.todo) return { type: "action", name: "create" };
+          return { type: "action", name: `open:${item.key}` };
+        },
+        view: (item) => {
+          if (!item.todo) return undefined;
+          return { type: "detail", key: item.key };
+        },
+        cols: listCols(),
+      });
+
+    let lists: Record<TodoListMode, ReturnType<typeof createList<TodoListRow>>> = {
+      tasks: createModeList("tasks", rowsForMode("tasks")),
+      prds: createModeList("prds", rowsForMode("prds")),
+      specs: createModeList("specs", rowsForMode("specs")),
+      closed: createModeList("closed", rowsForMode("closed")),
+    };
+
+    if (searchTerm) lists.tasks.set(searchTerm);
+
+    const currentMode = (): TodoListMode => modes[modeIndex] || "tasks";
+    const currentList = () => lists[currentMode()];
+
+    const setActive = (component: ActiveView | null) => {
       if (active && "focused" in active) active.focused = false;
       active = component;
       if (active && "focused" in active) active.focused = focused;
-      tui.requestRender();
+      uiTui.requestRender();
     };
+
+    const clearLeader = () => {
+      if (leaderTimer) clearTimeout(leaderTimer);
+      leaderTimer = null;
+      leaderActive = false;
+      uiTui.requestRender();
+    };
+
+    const startLeader = () => {
+      if (leaderActive) {
+        clearLeader();
+        return;
+      }
+      leaderActive = true;
+      if (leaderTimer) clearTimeout(leaderTimer);
+      leaderTimer = setTimeout(() => clearLeader(), 2000);
+      uiTui.requestRender();
+    };
+
+    const runAsync = (job: () => Promise<void>) => {
+      if (busy) return;
+      busy = true;
+      void job()
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : "UI action failed.";
+          ctx.ui.notify(message, "error");
+        })
+        .finally(() => {
+          busy = false;
+          uiTui.requestRender();
+        });
+    };
+
     const refresh = async () => {
-      const updated = await listTodos(todosDir);
-      all = updated;
-      selectors.tasks?.setTodos(listTasks(updated));
-      selectors.prds?.setTodos(listPrds(updated));
-      selectors.specs?.setTodos(listSpecs(updated));
-      selectors.closed?.setTodos(listClosed(updated));
+      const saved: Partial<Record<TodoListMode, string>> = {
+        tasks: lists.tasks.query(),
+        prds: lists.prds.query(),
+        specs: lists.specs.query(),
+        closed: lists.closed.query(),
+      };
+      all = await listTodos(todosDir);
+      lists = {
+        tasks: createModeList("tasks", rowsForMode("tasks")),
+        prds: createModeList("prds", rowsForMode("prds")),
+        specs: createModeList("specs", rowsForMode("specs")),
+        closed: createModeList("closed", rowsForMode("closed")),
+      };
+      if (saved.tasks) lists.tasks.set(saved.tasks);
+      if (saved.prds) lists.prds.set(saved.prds);
+      if (saved.specs) lists.specs.set(saved.specs);
+      if (saved.closed) lists.closed.set(saved.closed);
+      cache.clear();
     };
+
     const sync = async (): Promise<TodoFrontMatter[]> => {
       await refresh();
       return all;
     };
-    const setRepairing = (value: boolean) => {
-      selectors.tasks?.setRepairing(value);
-      selectors.prds?.setRepairing(value);
-      selectors.specs?.setRepairing(value);
-      selectors.closed?.setRepairing(value);
+
+    const resolve = async (todo: TodoFrontMatter): Promise<TodoRecord | null> => {
+      const cached = cache.get(todo.id);
+      if (cached) return cached;
+      const record = await ensureTodoExists(getTodoPath(todosDir, todo.id, todo.type), todo.id);
+      if (!record) {
+        ctx.ui.notify("Todo not found", "error");
+        return null;
+      }
+      cache.set(todo.id, record);
+      return record;
     };
+
+    const resolveById = async (id: string): Promise<TodoRecord | null> => {
+      const todo = all.find((item) => item.id === id);
+      if (!todo) return null;
+      return resolve(todo);
+    };
+
+    const goList = () => {
+      screen = "list";
+      actionList = null;
+      selectedRecord = null;
+      showDetail = false;
+      detail = undefined;
+      searchActive = false;
+      searchQuery = "";
+    };
+
+    const selectedTodoFromList = (): TodoFrontMatter | null => {
+      const intent = currentList().enter();
+      if (!intent || intent.type !== "action") return null;
+      if (!intent.name.startsWith("open:")) return null;
+      const id = intent.name.slice("open:".length);
+      return all.find((item) => item.id === id) ?? null;
+    };
+
+    const ensureDetailForListSelection = async (): Promise<void> => {
+      const todo = selectedTodoFromList();
+      if (!todo) {
+        showDetail = false;
+        detail = undefined;
+        return;
+      }
+      const record = await resolve(todo);
+      if (!record) {
+        showDetail = false;
+        detail = undefined;
+        return;
+      }
+      detail = detailPrimitive(record);
+      showDetail = true;
+    };
+
+    const openActions = async (todo: TodoFrontMatter): Promise<void> => {
+      const record = await resolve(todo);
+      if (!record) return;
+      const closed = isTodoClosed(record.status);
+      const rows: TodoActionRow[] = items(record, closed, true).map((item) => ({
+        name: item.value as TodoMenuAction,
+        label: item.label,
+        description: item.description || "",
+      }));
+      actionList = createAction<TodoActionRow>(
+        {
+          title: `Actions: ${record.title || "(untitled)"}`,
+          items: rows,
+          shortcuts: "j/k select • v detail • J/K scroll detail • enter confirm",
+          page: 7,
+          find: (item, query) =>
+            `${item.label} ${item.description}`.toLowerCase().includes(query.toLowerCase()),
+          intent: (item) => ({ type: "action", name: item.name }),
+          cols: [
+            { show: true, width: 20, tone: "normal", align: "left", pick: (item) => item.label },
+            {
+              show: true,
+              width: 52,
+              tone: "dim",
+              align: "left",
+              pick: (item) => item.description,
+            },
+          ],
+        },
+        "nested",
+      );
+      selectedRecord = record;
+      detail = detailPrimitive(record);
+      showDetail = true;
+      screen = "actions";
+      searchActive = false;
+      searchQuery = "";
+    };
+
     const runListCommand = async (
       action: "sweep-abandoned" | "sweep-completed" | "review-all" | "repair-frontmatter",
     ) => {
       try {
         if (action === "repair-frontmatter") {
-          setRepairing(true);
           const repaired = await runRepairFrontmatter(ctx);
-          setRepairing(false);
           if ("error" in repaired) {
             ctx.ui.notify(repaired.error, "error");
             return;
@@ -215,129 +525,42 @@ export async function runTodoUi(
           "info",
         );
       } catch (error) {
-        setRepairing(false);
         const message = error instanceof Error ? error.message : "List command failed.";
         ctx.ui.notify(message, "error");
       }
     };
-    const resolve = async (todo: TodoFrontMatter): Promise<TodoRecord | null> => {
-      const record = await ensureTodoExists(getTodoPath(todosDir, todo.id), todo.id);
-      if (record) return record;
-      ctx.ui.notify("Todo not found", "error");
-      return null;
+
+    const showAuditPrompt = async (record: TodoRecord) => {
+      const latest = await sync();
+      const current = getTodoPath(todosDir, record.id, record.type);
+      const scope = latest.map((item) => getTodoPath(todosDir, item.id, item.type));
+      setPrompt(buildValidateAuditPrompt(current, scope));
+      done();
     };
-    const matchHeight = (lines: string[], target: number): string[] => {
-      if (target <= 0) return lines;
-      if (lines.length >= target) return lines.slice(0, target);
-      if (!lines.length) return Array.from({ length: target }, () => "⠀");
-      const last = lines[lines.length - 1] || "";
-      const head = lines.slice(0, -1);
-      const fill = Array.from({ length: target - lines.length }, () => "⠀");
-      return [...head, ...fill, last];
-    };
-    const showDetailView = (record: TodoRecord, source: TodoListMode, onBack?: () => void) => {
-      let showPreview = true;
-      const detailFooter = onBack ? `${footer(record)} • b back` : footer(record);
-      const leaderFooter = leader(record);
-      let leaderActive = false;
-      let leaderTimer: ReturnType<typeof setTimeout> | null = null;
-      const back = onBack || (() => setActive(selectors[source] ?? currentSelector()));
-      const clearLeader = () => {
-        if (leaderTimer) clearTimeout(leaderTimer);
-        leaderTimer = null;
-        leaderActive = false;
-        detailMenu.setFooter(detailFooter);
-        tui.requestRender();
-      };
-      const startLeader = () => {
-        if (leaderActive) return clearLeader();
-        leaderActive = true;
-        if (leaderTimer) clearTimeout(leaderTimer);
-        leaderTimer = setTimeout(() => clearLeader(), 2000);
-        detailMenu.setFooter(leaderFooter, "warning");
-        tui.requestRender();
-      };
-      const preview = new TodoDetailPreviewComponent(uiTui, theme, record);
-      const detailMenu = new TodoActionMenuComponent(
+
+    const showEditChecklistInput = (record: TodoRecord) => {
+      const input = new TodoEditChecklistInputComponent(
+        uiTui,
         theme,
         record,
-        (action) => {
-          if (action === "view") {
-            showPreview = !showPreview;
-            tui.requestRender();
-            return;
-          }
-          void handleSelection(record, action, source);
+        (userPrompt) => {
+          const checklist = record.checklist || [];
+          const filePath = getTodoPath(todosDir, record.id, record.type);
+          setPrompt(
+            buildEditChecklistPrompt(record.title || "(untitled)", filePath, checklist, userPrompt),
+          );
+          done();
         },
-        () => setActive(selectors[source] ?? currentSelector()),
-        {
-          showView: true,
-          footer: detailFooter,
-        },
+        () => setActive(appView),
       );
-      const detailView = {
-        render(width: number) {
-          const menuLines = detailMenu.render(width);
-          if (!showPreview) {
-            const base = selectors[source] ?? currentSelector();
-            const target = base ? base.render(width).length : 0;
-            return matchHeight(menuLines, target);
-          }
-          const maxHeight = Math.max(5, Math.floor((uiTui.terminal.rows || 24) * 0.4));
-          const previewLines = preview.render(width, maxHeight);
-          return [...previewLines, ...menuLines];
-        },
-        invalidate() {
-          preview.invalidate();
-          detailMenu.invalidate();
-        },
-        handleInput(data: string) {
-          if (leaderActive) {
-            if ((data === "e" || data === "E") && record.checklist?.length) {
-              clearLeader();
-              return showEditChecklistInput(record, source);
-            }
-            return clearLeader();
-          }
-          if (data === "\u0018" || matchesKey(data, Key.ctrl("x"))) return startLeader();
-          if (data === "b" && onBack) return back();
-          if (matchesKey(data, Key.escape)) return back();
-          if (data === "v" || data === "V") {
-            showPreview = !showPreview;
-            tui.requestRender();
-            return;
-          }
-          if (data === "k") {
-            const result = detailMenu.handleInput("\u001b[A");
-            tui.requestRender();
-            return result;
-          }
-          if (data === "j") {
-            const result = detailMenu.handleInput("\u001b[B");
-            tui.requestRender();
-            return result;
-          }
-          if (showPreview && (data === "w" || data === "W")) {
-            preview.scrollBy(-1);
-            tui.requestRender();
-            return;
-          }
-          if (showPreview && (data === "s" || data === "S")) {
-            preview.scrollBy(1);
-            tui.requestRender();
-            return;
-          }
-          detailMenu.handleInput(data);
-        },
-        focused,
-      };
-      setActive(detailView);
+      setActive(input);
     };
-    const showAttachInput = async (record: TodoRecord, source: TodoListMode) => {
+
+    const showAttachInput = async (record: TodoRecord) => {
       const current = await sync();
       const prds = current.filter((item) => item.id !== record.id && item.type === "prd");
       const specs = current.filter((item) => item.id !== record.id && item.type === "spec");
-      const todos = current.filter(
+      const todosForLinks = current.filter(
         (item) => item.id !== record.id && (item.type || "todo") === "todo",
       );
       const picker = new LinkSelectComponent(
@@ -345,7 +568,7 @@ export async function runTodoUi(
         theme,
         prds,
         specs,
-        todos,
+        todosForLinks,
         async (selected) => {
           const latest = await sync();
           const targets = latest.filter(
@@ -357,19 +580,24 @@ export async function runTodoUi(
           const result = await attachLinks(todosDir, record, targets, ctx);
           if ("error" in result) {
             ctx.ui.notify(result.error, "error");
-            return setActive(picker);
+            setActive(picker);
+            return;
           }
           await refresh();
-          const updated = await resolve(record);
-          if (!updated) return setActive(selectors[source] ?? currentSelector());
+          const updated = await resolveById(record.id);
+          if (updated) {
+            selectedRecord = updated;
+            detail = detailPrimitive(updated);
+          }
+          setActive(appView);
           ctx.ui.notify(`Attached links across ${result.updated} items`, "info");
-          showDetailView(updated, source);
         },
-        () => showDetailView(record, source),
+        () => setActive(appView),
       );
       setActive(picker);
     };
-    const showValidateInput = async (record: TodoRecord, source: TodoListMode) => {
+
+    const showValidateInput = async (record: TodoRecord) => {
       const cli = getCliPath();
       const file = getTodoPath(todosDir, record.id, record.type);
       let result: {
@@ -391,7 +619,7 @@ export async function runTodoUi(
       } catch (error) {
         const message = error instanceof Error ? error.message : "Validate command failed.";
         ctx.ui.notify(message, "error");
-        return showDetailView(record, source);
+        return;
       }
       if (!result.recommendations.length) {
         const issueCount = result.issues.length;
@@ -401,7 +629,7 @@ export async function runTodoUi(
             : "No issues found.",
           "info",
         );
-        return showDetailView(record, source);
+        return;
       }
       const picker = new ValidateSelectComponent(
         uiTui,
@@ -423,44 +651,23 @@ export async function runTodoUi(
           const applied = await attachLinks(todosDir, record, targets, ctx);
           if ("error" in applied) {
             ctx.ui.notify(applied.error, "error");
-            return setActive(picker);
+            setActive(picker);
+            return;
           }
           await refresh();
-          const updated = await resolve(record);
-          if (!updated) return setActive(selectors[source] ?? currentSelector());
+          const updated = await resolveById(record.id);
+          if (updated) {
+            selectedRecord = updated;
+            detail = detailPrimitive(updated);
+          }
+          setActive(appView);
           ctx.ui.notify(`Applied ${targets.length} recommended attachment(s)`, "info");
-          showDetailView(updated, source);
         },
-        () => showDetailView(record, source),
+        () => setActive(appView),
       );
       setActive(picker);
     };
-    const showAuditPrompt = async (record: TodoRecord) => {
-      const latest = await sync();
-      const current = getTodoPath(todosDir, record.id, record.type);
-      const scope = latest.map((item) => getTodoPath(todosDir, item.id, item.type));
-      setPrompt(buildValidateAuditPrompt(current, scope));
-      done();
-    };
-    const normalizePath = (value: string) => value.replaceAll("\\", "/");
-    const handleSelection = async (
-      record: TodoRecord,
-      action: TodoMenuAction,
-      source: TodoListMode,
-    ) => {
-      if (action === "view") return setActive(selectors[source] ?? currentSelector());
-      if (action === "edit-checklist") return showEditChecklistInput(record, source);
-      if (action === "attach-links") return void showAttachInput(record, source);
-      if (action === "validate-links") return void showValidateInput(record, source);
-      if (action === "audit") return void showAuditPrompt(record);
-      const result = await applyTodoAction(todosDir, ctx, refresh, done, record, action, setPrompt);
-      if (result === "stay") setActive(selectors[source] ?? currentSelector());
-    };
-    const openDetailFromTodo = async (todo: TodoFrontMatter | TodoRecord, source: TodoListMode) => {
-      const record = "body" in todo ? todo : await resolve(todo);
-      if (!record) return;
-      showDetailView(record, source);
-    };
+
     const showCreateInput = async (mode: TodoListMode) => {
       const current = await sync();
       if (mode === "tasks") {
@@ -470,7 +677,7 @@ export async function runTodoUi(
           listPrds(current),
           listSpecs(current),
           (selected) => {
-            createInput = new TodoCreateInputComponent(
+            const createInput = new TodoCreateInputComponent(
               uiTui,
               theme,
               (userPrompt) => {
@@ -497,7 +704,7 @@ export async function runTodoUi(
                   done();
                 })();
               },
-              () => setActive(currentSelector()),
+              () => setActive(appView),
               {
                 title: "Create New Todo",
                 description:
@@ -506,7 +713,7 @@ export async function runTodoUi(
             );
             setActive(createInput);
           },
-          () => setActive(currentSelector()),
+          () => setActive(appView),
         );
         setActive(picker);
         return;
@@ -517,7 +724,7 @@ export async function runTodoUi(
           theme,
           listPrds(current),
           (selectedPrds) => {
-            createInput = new TodoCreateInputComponent(
+            const createInput = new TodoCreateInputComponent(
               uiTui,
               theme,
               (userPrompt) => {
@@ -526,7 +733,7 @@ export async function runTodoUi(
                 setPrompt(buildCreateSpecPrompt(userPrompt, cli, ctx.cwd, prdPaths));
                 done();
               },
-              () => setActive(currentSelector()),
+              () => setActive(appView),
               {
                 title: "Create New Spec",
                 description:
@@ -535,12 +742,12 @@ export async function runTodoUi(
             );
             setActive(createInput);
           },
-          () => setActive(currentSelector()),
+          () => setActive(appView),
         );
         setActive(picker);
         return;
       }
-      createInput = new TodoCreateInputComponent(
+      const createInput = new TodoCreateInputComponent(
         uiTui,
         theme,
         (userPrompt) => {
@@ -552,7 +759,7 @@ export async function runTodoUi(
           setPrompt(prompt);
           done();
         },
-        () => setActive(currentSelector()),
+        () => setActive(appView),
         {
           title: mode === "prds" ? "Create New PRD" : "Create New Todo",
           description:
@@ -563,62 +770,259 @@ export async function runTodoUi(
       );
       setActive(createInput);
     };
-    const showEditChecklistInput = (record: TodoRecord, source: TodoListMode) => {
-      editInput = new TodoEditChecklistInputComponent(
-        uiTui,
-        theme,
-        record,
-        (userPrompt) => {
-          const checklist = record.checklist || [];
-          const filePath = getTodoPath(todosDir, record.id, record.type);
-          setPrompt(
-            buildEditChecklistPrompt(record.title || "(untitled)", filePath, checklist, userPrompt),
-          );
-          done();
-        },
-        () => showDetailView(record, source),
-      );
-      setActive(editInput);
+
+    const handleAction = async (action: TodoMenuAction): Promise<void> => {
+      const record = selectedRecord;
+      if (!record) return;
+      if (action === "view") {
+        showDetail = !showDetail;
+        if (showDetail) detail = detailPrimitive(record);
+        return;
+      }
+      if (action === "edit-checklist") {
+        showEditChecklistInput(record);
+        return;
+      }
+      if (action === "attach-links") {
+        await showAttachInput(record);
+        return;
+      }
+      if (action === "validate-links") {
+        await showValidateInput(record);
+        return;
+      }
+      if (action === "audit") {
+        await showAuditPrompt(record);
+        return;
+      }
+      const result = await applyTodoAction(todosDir, ctx, refresh, done, record, action, setPrompt);
+      if (result === "stay") {
+        goList();
+      }
     };
-    const buildSelector = (mode: TodoListMode, items: TodoFrontMatter[], initial?: string) =>
-      new TodoSelectorComponent(
-        uiTui,
-        theme,
-        items,
-        (todo) => void openDetailFromTodo(todo, mode),
-        () => done(),
-        initial,
-        currentSessionId,
-        (todo, action) =>
-          action === "create"
-            ? void showCreateInput(mode)
-            : void handleQuickAction(
-                todosDir,
-                todo,
-                action,
-                () => void showCreateInput(mode),
-                done,
-                setPrompt,
-                ctx,
-                resolve,
-              ),
-        (direction) => {
-          if (direction === "prev") {
-            index = (index - 1 + modes.length) % modes.length;
-            setActive(currentSelector());
+
+    const runLeader = async (keyData: string): Promise<boolean> => {
+      const selected = selectedTodoFromList();
+      if ((keyData === "w" || keyData === "W") && selected) {
+        clearLeader();
+        await handleQuickAction(
+          todosDir,
+          selected,
+          "work",
+          () => {
+            void showCreateInput(currentMode());
+          },
+          done,
+          setPrompt,
+          ctx,
+          resolve,
+        );
+        return true;
+      }
+      if (keyData === "c" || keyData === "C") {
+        clearLeader();
+        await showCreateInput(currentMode());
+        return true;
+      }
+      if (keyData === "y" || keyData === "Y") {
+        clearLeader();
+        await runListCommand("review-all");
+        return true;
+      }
+      if (keyData === "r" || keyData === "R") {
+        clearLeader();
+        await runListCommand("repair-frontmatter");
+        return true;
+      }
+      if ((keyData === "a" || keyData === "A") && currentMode() === "closed") {
+        clearLeader();
+        await runListCommand("sweep-abandoned");
+        return true;
+      }
+      if ((keyData === "d" || keyData === "D") && currentMode() === "closed") {
+        clearLeader();
+        await runListCommand("sweep-completed");
+        return true;
+      }
+      clearLeader();
+      return false;
+    };
+
+    const appView: ActiveView = {
+      render(width: number): string[] {
+        const panel = screen === "actions" ? actionList : currentList();
+        if (!panel) return [];
+        const base = create(panel.slot(), skin).render(width);
+        if (!showDetail || !detail) return base;
+        const top = renderDetail(detail.slot(), width, base.length, skin);
+        return [...top, "", ...base];
+      },
+      invalidate() {},
+      handleInput(data: string): void {
+        if (searchActive) {
+          if (esc(data)) {
+            searchActive = false;
+            searchQuery = "";
+            currentList().set("");
+            uiTui.requestRender();
             return;
           }
-          index = (index + 1) % modes.length;
-          setActive(currentSelector());
-        },
-        (action) => void runListCommand(action),
-        mode,
-      );
-    selectors.tasks = buildSelector("tasks", listTasks(todos), searchTerm || undefined);
-    selectors.prds = buildSelector("prds", listPrds(todos));
-    selectors.specs = buildSelector("specs", listSpecs(todos));
-    selectors.closed = buildSelector("closed", listClosed(todos));
-    setActive(currentSelector());
+          if (enter(data)) {
+            searchActive = false;
+            uiTui.requestRender();
+            return;
+          }
+          if (back(data)) {
+            searchQuery = searchQuery.slice(0, -1);
+            currentList().set(searchQuery);
+            uiTui.requestRender();
+            return;
+          }
+          if (text(data)) {
+            searchQuery += data.toLowerCase();
+            currentList().set(searchQuery);
+            uiTui.requestRender();
+          }
+          return;
+        }
+
+        const step = detailScroll(data);
+        if (showDetail && detail && step !== 0) {
+          if (step > 0) detail.down();
+          if (step < 0) detail.up();
+          uiTui.requestRender();
+          return;
+        }
+
+        if (screen === "actions") {
+          if (esc(data)) {
+            goList();
+            uiTui.requestRender();
+            return;
+          }
+          if (detailToggle(data)) {
+            showDetail = !showDetail;
+            if (showDetail && selectedRecord) detail = detailPrimitive(selectedRecord);
+            uiTui.requestRender();
+            return;
+          }
+          if (down(data)) {
+            actionList?.down();
+            uiTui.requestRender();
+            return;
+          }
+          if (up(data)) {
+            actionList?.up();
+            uiTui.requestRender();
+            return;
+          }
+          if (enter(data)) {
+            const intent = actionList?.enter();
+            if (!intent || intent.type !== "action") return;
+            runAsync(async () => {
+              await handleAction(intent.name as TodoMenuAction);
+            });
+          }
+          return;
+        }
+
+        if (leaderActive) {
+          runAsync(async () => {
+            await runLeader(data);
+          });
+          return;
+        }
+
+        if (leader(data)) {
+          startLeader();
+          return;
+        }
+
+        if (esc(data)) {
+          if (showDetail) {
+            showDetail = false;
+            detail = undefined;
+            uiTui.requestRender();
+            return;
+          }
+          done();
+          return;
+        }
+
+        if (tab(data)) {
+          modeIndex = (modeIndex + 1) % modes.length;
+          showDetail = false;
+          detail = undefined;
+          uiTui.requestRender();
+          return;
+        }
+
+        if (backtab(data)) {
+          modeIndex = (modeIndex - 1 + modes.length) % modes.length;
+          showDetail = false;
+          detail = undefined;
+          uiTui.requestRender();
+          return;
+        }
+
+        if (slash(data)) {
+          searchActive = true;
+          searchQuery = currentList().query();
+          uiTui.requestRender();
+          return;
+        }
+
+        if (down(data)) {
+          currentList().down();
+          if (showDetail) runAsync(ensureDetailForListSelection);
+          uiTui.requestRender();
+          return;
+        }
+
+        if (up(data)) {
+          currentList().up();
+          if (showDetail) runAsync(ensureDetailForListSelection);
+          uiTui.requestRender();
+          return;
+        }
+
+        if (detailToggle(data)) {
+          if (showDetail) {
+            showDetail = false;
+            detail = undefined;
+            uiTui.requestRender();
+            return;
+          }
+          runAsync(ensureDetailForListSelection);
+          return;
+        }
+
+        if (enter(data)) {
+          const intent = currentList().enter();
+          if (!intent || intent.type !== "action") return;
+          if (intent.name === "create") {
+            runAsync(async () => {
+              await showCreateInput(currentMode());
+            });
+            return;
+          }
+          if (!intent.name.startsWith("open:")) return;
+          const id = intent.name.slice("open:".length);
+          const todo = all.find((item) => item.id === id);
+          if (!todo) {
+            ctx.ui.notify("Todo not found", "error");
+            return;
+          }
+          runAsync(async () => {
+            await openActions(todo);
+          });
+        }
+      },
+      focused,
+    };
+
+    setActive(appView);
+
     return {
       get focused() {
         return focused;
@@ -639,5 +1043,6 @@ export async function runTodoUi(
       },
     };
   });
+
   return nextPrompt;
 }

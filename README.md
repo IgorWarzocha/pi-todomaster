@@ -16,6 +16,7 @@ It provides an interactive `/todo` UI for managing three document types:
 - attach and validate bidirectional links between related plan files
 - edit todo checklists directly from the UI
 - claim/release assignment per session
+- use a standardized SDK-based TUI shell shared across extensions
 
 ## Checklist and status model
 
@@ -32,11 +33,11 @@ For todo items, checklists are the primary progress signal:
   - `Enter` to open actions
   - `/` to search
   - `Ctrl+X` to open **More options** (auto-timeout)
-  - `Tab` cycles list panes
+  - `Tab` / `Shift+Tab` cycle list panes
 - detail/actions:
   - `j/k` move through actions
-  - `v` opens detail overlay
-  - overlay uses `j/k` for scrolling
+  - `v` toggles attached detail preview
+  - preview uses `J/K` for scrolling
   - `Esc` returns back
 - create/edit inputs:
   - `Enter` submits

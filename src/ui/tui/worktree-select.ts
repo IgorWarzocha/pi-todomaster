@@ -1,7 +1,12 @@
 import { Container, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { mapIntent } from "./selector-keys.js";
+import {
+  down as keyDown,
+  enter as keyEnter,
+  esc as keyEsc,
+  up as keyUp,
+} from "@howaboua/pi-howaboua-extensions-primitives-sdk";
 
 const ROWS = 9;
 
@@ -43,7 +48,7 @@ export class WorktreeSelectComponent extends Container {
     this.addChild(this.listContainer);
 
     this.addChild(new Spacer(1));
-    this.addChild(new Text(theme.fg("dim", "↑↓ select • Enter confirm • Esc back"), 1, 0));
+    this.addChild(new Text(theme.fg("dim", "↑↓ or j/k select • Enter confirm • Esc back"), 1, 0));
     this.addChild(new Spacer(1));
     this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
@@ -76,19 +81,27 @@ export class WorktreeSelectComponent extends Container {
   }
 
   handleInput(keyData: string): void {
-    const intent = mapIntent(keyData, "tasks");
-
-    if (intent === "up") {
+    if (!this.items.length) {
+      if (keyEsc(keyData)) this.onCancelCallback();
+      return;
+    }
+    if (keyUp(keyData)) {
       this.selectedIndex =
         this.selectedIndex === 0 ? this.items.length - 1 : this.selectedIndex - 1;
       this.renderState();
-    } else if (intent === "down") {
+      return;
+    }
+    if (keyDown(keyData)) {
       this.selectedIndex =
         this.selectedIndex === this.items.length - 1 ? 0 : this.selectedIndex + 1;
       this.renderState();
-    } else if (intent === "confirm") {
+      return;
+    }
+    if (keyEnter(keyData)) {
       this.onSelectCallback(this.items[this.selectedIndex].value);
-    } else if (intent === "cancel") {
+      return;
+    }
+    if (keyEsc(keyData)) {
       this.onCancelCallback();
     }
   }
