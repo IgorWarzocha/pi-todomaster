@@ -96,10 +96,10 @@ async function runRalph(
     return "stay";
   }
   const filePath = getTodoPath(todosDir, record.id, record.type);
-  const prepared = await prepareRalphLoop(ctx.cwd, record, flow.work(record, filePath));
+  const prepared = prepareRalphLoop(ctx.cwd, filePath);
   ctx.ui.setEditorText(prepared.command);
   ctx.ui.notify(
-    `Ralph loop command staged in editor. Prompt file: ${prepared.promptPath.replaceAll("\\", "/")}`,
+    `Ralph loop command staged in editor. Using plan file: ${prepared.planPath.replaceAll("\\", "/")}`,
     "info",
   );
   return "stay";
