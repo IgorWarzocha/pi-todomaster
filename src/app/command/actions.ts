@@ -13,9 +13,11 @@ import {
   getTodoPath,
   releaseTodoAssignment,
   reopenTodoForUser,
+  setTodoRalphLoop,
   updateTodoStatus,
 } from "../../io/index.js";
 import { ensureWorktree } from "../../core/worktree.js";
+import { prepareRalphLoop } from "../../core/ralph-loop.js";
 import * as flow from "../../ui/gui/actions.js";
 
 type SessionSwitch = (path: string) => Promise<{ cancelled: boolean }>;
@@ -79,6 +81,30 @@ async function runWork(
   return "exit";
 }
 
+async function runRalph(
+  todosDir: string,
+  record: TodoRecord,
+  ctx: ExtensionCommandContext,
+): Promise<"stay" | "exit"> {
+  if (!record.ralph_loop) {
+    ctx.ui.notify("Ralph loop is disabled for this item.", "error");
+    return "stay";
+  }
+  const links = validateLinks(record);
+  if ("error" in links) {
+    ctx.ui.notify(links.error, "error");
+    return "stay";
+  }
+  const filePath = getTodoPath(todosDir, record.id, record.type);
+  const prepared = await prepareRalphLoop(ctx.cwd, record, flow.work(record, filePath));
+  ctx.ui.setEditorText(prepared.command);
+  ctx.ui.notify(
+    `Ralph loop command staged in editor. Prompt file: ${prepared.promptPath.replaceAll("\\", "/")}`,
+    "info",
+  );
+  return "stay";
+}
+
 export async function applyTodoAction(
   todosDir: string,
   ctx: ExtensionCommandContext,
@@ -106,6 +132,21 @@ export async function applyTodoAction(
     done();
     return "exit";
   }
+  if (action === "toggle-ralph-loop") {
+    const next = !record.ralph_loop;
+    const updated = await setTodoRalphLoop(todosDir, record.id, next, ctx);
+    if ("error" in updated) {
+      ctx.ui.notify(updated.error, "error");
+      return "stay";
+    }
+    await refresh();
+    ctx.ui.notify(
+      `${next ? "Enabled" : "Disabled"} Ralph loop for "${record.title || "(untitled)"}"`,
+      "info",
+    );
+    return "stay";
+  }
+  if (action === "run-ralph-loop") return runRalph(todosDir, record, ctx);
   if (action === "view") return "stay";
   if (action === "edit-checklist") return "stay";
   if (action === "attach-links") return "stay";

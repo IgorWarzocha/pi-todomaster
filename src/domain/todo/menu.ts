@@ -5,10 +5,25 @@ export function todoItems(
   assigned: boolean,
   jump: boolean,
   showView: boolean,
+  ralph: boolean,
 ): SelectItem[] {
   return [
     { value: "work", label: "work", description: "Work on todo" },
     { value: "review-item", label: "review-item", description: "Review selected todo" },
+    {
+      value: "toggle-ralph-loop",
+      label: ralph ? "[x] ralph-loop" : "[ ] ralph-loop",
+      description: ralph ? "Disable Ralph loop mode" : "Enable Ralph loop mode",
+    },
+    ...(ralph
+      ? [
+          {
+            value: "run-ralph-loop",
+            label: "run-ralph-loop",
+            description: "Prepare canonical Ralph loop command",
+          },
+        ]
+      : []),
     ...(closed
       ? [
           { value: "reopen", label: "reopen", description: "Reopen todo" },

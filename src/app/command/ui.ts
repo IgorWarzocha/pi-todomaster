@@ -121,7 +121,8 @@ function rowMeta(todo: TodoFrontMatter, sessionId?: string): string {
   const assigned = todo.assigned_to_session
     ? `assigned:${todo.assigned_to_session === sessionId ? "you" : todo.assigned_to_session}`
     : "";
-  return [type, tags, assigned].filter(Boolean).join(" • ");
+  const ralph = todo.ralph_loop ? "ralph:✓" : "";
+  return [type, tags, assigned, ralph].filter(Boolean).join(" • ");
 }
 
 function detailPrimitive(record: TodoRecord): Primitive {
@@ -143,7 +144,11 @@ function detailPrimitive(record: TodoRecord): Primitive {
     : [];
   return createDetail({
     title: record.title || "(untitled)",
-    meta: [`${type} • ${status}`, `tags: ${tags}`],
+    meta: [
+      `${type} • ${status}`,
+      `tags: ${tags}`,
+      `ralph-loop: ${record.ralph_loop ? "enabled" : "disabled"}`,
+    ],
     block: linkLines.length ? [`Links (${linkLines.length})`, ...linkLines] : undefined,
     body: checklist.length ? [...checklist, "", ...body] : body,
   });
@@ -241,7 +246,7 @@ export async function runTodoUi(
         state: rowState(todo),
         meta: rowMeta(todo, currentSessionId),
         search:
-          `${todo.title} ${todo.tags.join(" ")} ${status(todo)} ${todo.type || "todo"} ${todo.assigned_to_session || ""}`.toLowerCase(),
+          `${todo.title} ${todo.tags.join(" ")} ${status(todo)} ${todo.type || "todo"} ${todo.assigned_to_session || ""} ${todo.ralph_loop ? "ralph-loop" : ""}`.toLowerCase(),
         todo,
       }));
       if (mode === "closed") return rows;

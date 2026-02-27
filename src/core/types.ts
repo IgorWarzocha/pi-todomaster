@@ -33,6 +33,7 @@ export interface TodoFrontMatter {
   links?: TodoLinks;
   agent_rules?: string;
   worktree?: TodoWorktree;
+  ralph_loop?: boolean;
 }
 
 export interface TodoRecord extends TodoFrontMatter {
@@ -73,6 +74,8 @@ export type TodoMenuAction =
   | "validate-links"
   | "audit"
   | "edit-checklist"
+  | "toggle-ralph-loop"
+  | "run-ralph-loop"
   | "copyPath"
   | "copyText"
   | "view";

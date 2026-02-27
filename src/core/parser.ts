@@ -24,6 +24,7 @@ export function parseFrontMatter(text: string, idFallback: string): TodoFrontMat
     links: undefined,
     agent_rules: undefined,
     worktree: undefined,
+    ralph_loop: false,
   };
 
   const trimmed = text.trim();
@@ -58,6 +59,7 @@ export function parseFrontMatter(text: string, idFallback: string): TodoFrontMat
     if (links) data.links = links;
     const worktree = parseWorktree(parsed.worktree);
     if (worktree) data.worktree = worktree;
+    if (typeof parsed.ralph_loop === "boolean") data.ralph_loop = parsed.ralph_loop;
   } catch {
     return data;
   }
@@ -202,6 +204,7 @@ export function parseTodoContent(content: string, idFallback: string): TodoRecor
     links: parsed.links,
     agent_rules: parsed.agent_rules,
     worktree: parsed.worktree,
+    ralph_loop: parsed.ralph_loop,
     body: parts.body ?? "",
   };
 }
@@ -220,6 +223,7 @@ export function serializeTodo(todo: TodoRecord): string {
     links: todo.links,
     agent_rules: todo.agent_rules,
     worktree: todo.worktree,
+    ralph_loop: Boolean(todo.ralph_loop),
     checklist: todo.checklist?.map((item) => ({
       id: item.id,
       title: item.title,

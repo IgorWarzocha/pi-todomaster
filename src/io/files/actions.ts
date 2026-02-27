@@ -123,3 +123,16 @@ export async function reopenTodoForUser(
     return existing;
   });
 }
+
+export async function setTodoRalphLoop(
+  todosDir: string,
+  id: string,
+  enabled: boolean,
+  ctx: ExtensionContext,
+): Promise<TodoRecord | { error: string }> {
+  return withExisting(todosDir, id, ctx, async (existing, filePath) => {
+    existing.ralph_loop = enabled;
+    await writeTodoFile(filePath, existing);
+    return existing;
+  });
+}
