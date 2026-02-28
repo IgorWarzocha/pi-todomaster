@@ -121,7 +121,12 @@ function rowMeta(todo: TodoFrontMatter, sessionId?: string): string {
   const assigned = todo.assigned_to_session
     ? `assigned:${todo.assigned_to_session === sessionId ? "you" : todo.assigned_to_session}`
     : "";
-  const ralph = todo.ralph_loop_mode && todo.ralph_loop_mode !== "off" ? todo.ralph_loop_mode : "";
+  const ralph =
+    todo.ralph_loop_mode === "ralph-loop"
+      ? "loop:rl"
+      : todo.ralph_loop_mode === "ralph-loop-linked"
+        ? "loop:rl+"
+        : "";
   return [type, tags, assigned, ralph].filter(Boolean).join(" • ");
 }
 
