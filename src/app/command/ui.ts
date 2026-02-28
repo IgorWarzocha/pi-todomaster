@@ -121,7 +121,13 @@ function rowMeta(todo: TodoFrontMatter, sessionId?: string): string {
   const assigned = todo.assigned_to_session
     ? `assigned:${todo.assigned_to_session === sessionId ? "you" : todo.assigned_to_session}`
     : "";
-  return [type, tags, assigned].filter(Boolean).join(" • ");
+  const ralph =
+    todo.ralph_loop_mode === "ralph-loop"
+      ? "loop:rl"
+      : todo.ralph_loop_mode === "ralph-loop-linked"
+        ? "loop:rl+"
+        : "";
+  return [type, tags, assigned, ralph].filter(Boolean).join(" • ");
 }
 
 function detailPrimitive(record: TodoRecord): Primitive {
@@ -143,7 +149,11 @@ function detailPrimitive(record: TodoRecord): Primitive {
     : [];
   return createDetail({
     title: record.title || "(untitled)",
-    meta: [`${type} • ${status}`, `tags: ${tags}`],
+    meta: [
+      `${type} • ${status}`,
+      `tags: ${tags}`,
+      `ralph-loop: ${record.ralph_loop_mode || "off"}`,
+    ],
     block: linkLines.length ? [`Links (${linkLines.length})`, ...linkLines] : undefined,
     body: checklist.length ? [...checklist, "", ...body] : body,
   });
@@ -241,7 +251,7 @@ export async function runTodoUi(
         state: rowState(todo),
         meta: rowMeta(todo, currentSessionId),
         search:
-          `${todo.title} ${todo.tags.join(" ")} ${status(todo)} ${todo.type || "todo"} ${todo.assigned_to_session || ""}`.toLowerCase(),
+          `${todo.title} ${todo.tags.join(" ")} ${status(todo)} ${todo.type || "todo"} ${todo.assigned_to_session || ""} ${todo.ralph_loop_mode || "off"}`.toLowerCase(),
         todo,
       }));
       if (mode === "closed") return rows;
@@ -429,7 +439,8 @@ export async function runTodoUi(
         {
           title: `Actions: ${record.title || "(untitled)"}`,
           items: rows,
-          shortcuts: "j/k select • v detail • J/K scroll detail • enter confirm",
+          shortcuts:
+            "j/k select • space toggle loops • v detail • J/K scroll detail • enter confirm",
           page: 7,
           find: (item, query) =>
             `${item.label} ${item.description}`.toLowerCase().includes(query.toLowerCase()),
@@ -771,6 +782,11 @@ export async function runTodoUi(
       setActive(createInput);
     };
 
+    const keepActionsOpen = (action: TodoMenuAction): boolean =>
+      action === "toggle-ralph-loop" ||
+      action === "toggle-ralph-loop-linked" ||
+      action === "run-ralph-loop";
+
     const handleAction = async (action: TodoMenuAction): Promise<void> => {
       const record = selectedRecord;
       if (!record) return;
@@ -796,9 +812,14 @@ export async function runTodoUi(
         return;
       }
       const result = await applyTodoAction(todosDir, ctx, refresh, done, record, action, setPrompt);
-      if (result === "stay") {
+      if (result !== "stay") return;
+      if (!keepActionsOpen(action)) {
         goList();
+        return;
       }
+      const updated = await resolveById(record.id);
+      if (!updated) return;
+      await openActions(updated);
     };
 
     const runLeader = async (keyData: string): Promise<boolean> => {
@@ -914,6 +935,16 @@ export async function runTodoUi(
           if (up(data)) {
             actionList?.up();
             uiTui.requestRender();
+            return;
+          }
+          if (data === " ") {
+            const intent = actionList?.enter();
+            if (!intent || intent.type !== "action") return;
+            if (intent.name !== "toggle-ralph-loop" && intent.name !== "toggle-ralph-loop-linked")
+              return;
+            runAsync(async () => {
+              await handleAction(intent.name as TodoMenuAction);
+            });
             return;
           }
           if (enter(data)) {

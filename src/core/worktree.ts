@@ -1,20 +1,9 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { runPicker } from "@howaboua/pi-howaboua-extensions-primitives-sdk";
 import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import type { TodoFrontMatter } from "./types.js";
-import { WorktreeSelectComponent } from "../ui/tui/worktree-select.js";
-import { TUI } from "@mariozechner/pi-tui";
-
-function ensureTui(value: unknown): TUI {
-  if (!value || typeof value !== "object") throw new Error("Invalid TUI instance");
-  const withRender: unknown = Reflect.get(value, "requestRender");
-  const withTerminal: unknown = Reflect.get(value, "terminal");
-  if (typeof withRender !== "function") throw new Error("Invalid TUI: requestRender is missing");
-  if (!withTerminal || typeof withTerminal !== "object")
-    throw new Error("Invalid TUI: terminal is missing");
-  return value as TUI;
-}
 
 interface Repo {
   path: string;
@@ -137,54 +126,58 @@ export async function ensureWorktree(record: TodoFrontMatter, ctx: ExtensionComm
     return ensureRepoWorktree(record, repos[0].path);
   }
 
-  const selection = await new Promise<string | null>((resolve) => {
-    void ctx.ui.custom<void>((tui, theme, _kb, done) => {
-      const uiTui = ensureTui(tui);
-      const items = [
-        { value: "none", label: "Work in current branch", description: "no git actions" },
-        {
-          value: "new",
-          label: `Create/Switch to: ${targetBranch}`,
-          description: "dedicated worktree",
-        },
-      ];
+  const items = [
+    { value: "none", label: "Work in current branch", description: "no git actions" },
+    {
+      value: "new",
+      label: `Create/Switch to: ${targetBranch}`,
+      description: "dedicated worktree",
+    },
+  ];
 
-      for (const repo of repos) {
-        try {
-          const list = parseWorktrees(run("git", ["worktree", "list", "--porcelain"], repo.path));
-          for (const w of list) {
-            if (!w.branch) continue;
-            if (w.branch === targetBranch) continue;
-            items.push({
-              value: buildSwitchValue({ repo: repo.path, branch: w.branch, worktree: w.path }),
-              label: `Switch to: ${w.branch}`,
-              description: `in ${path.basename(repo.path)}`,
-            });
-          }
-        } catch {}
+  for (const repo of repos) {
+    try {
+      const list = parseWorktrees(run("git", ["worktree", "list", "--porcelain"], repo.path));
+      for (const w of list) {
+        if (!w.branch) continue;
+        if (w.branch === targetBranch) continue;
+        items.push({
+          value: buildSwitchValue({ repo: repo.path, branch: w.branch, worktree: w.path }),
+          label: `Switch to: ${w.branch}`,
+          description: `in ${path.basename(repo.path)}`,
+        });
       }
+    } catch {}
+  }
 
-      const component = new WorktreeSelectComponent(
-        uiTui,
-        theme,
-        items,
-        (val) => {
-          resolve(val);
-          done();
+  const pickerCtx = {
+    hasUI: ctx.hasUI,
+    ui: {
+      custom: ctx.ui.custom as unknown as <T>(
+        factory: (
+          tui: { requestRender: () => void },
+          theme: { fg: (color: string, text: string) => string },
+          keys: unknown,
+          done: (result: T) => void,
+        ) => {
+          render: (width: number) => string[];
+          invalidate: () => void;
+          handleInput: (data: string) => void;
         },
-        () => {
-          resolve(null);
-          done();
-        },
-      );
+      ) => Promise<T>,
+    },
+  };
 
-      return {
-        render: (w) => component.render(w),
-        handleInput: (d) => component.handleInput(d),
-        invalidate: () => component.invalidate(),
-        focused: true,
-      };
-    });
+  const selection = await runPicker(pickerCtx, {
+    title: "Worktree Orchestration",
+    items: items.map((item) => ({
+      label: `${item.label}${item.description ? ` (${item.description})` : ""}`,
+      value: item.value,
+      searchableText: `${item.label} ${item.description || ""}`,
+    })),
+    search: true,
+    page: 7,
+    shortcuts: "/ search • j/k move • enter confirm • esc back",
   });
 
   if (!selection || selection === "none") return { ok: true as const, skipped: true };
