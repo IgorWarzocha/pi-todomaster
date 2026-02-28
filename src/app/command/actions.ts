@@ -62,6 +62,9 @@ async function runWork(
   done: () => void,
   setPrompt: (value: string) => void,
 ): Promise<"stay" | "exit"> {
+  if (ralphMode(record) !== "off") {
+    return runRalph(todosDir, record, ctx);
+  }
   const links = validateLinks(record);
   if ("error" in links) {
     ctx.ui.notify(links.error, "error");
@@ -88,7 +91,7 @@ async function runWork(
 
 async function runRalph(
   todosDir: string,
-  record: TodoRecord,
+  record: TodoFrontMatter,
   ctx: ExtensionCommandContext,
 ): Promise<"stay" | "exit"> {
   const mode = ralphMode(record);
