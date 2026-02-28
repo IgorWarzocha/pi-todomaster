@@ -20,7 +20,7 @@ export function prdItems(
     },
     {
       value: "toggle-ralph-loop-linked",
-      label: onLinked ? "[x] ralph-loop-linked" : "[ ] ralph-loop-linked",
+      label: onLinked ? "[x] ralph-linked" : "[ ] ralph-linked",
       description: onLinked ? "Disable linked Ralph loop mode" : "Enable linked Ralph loop mode",
     },
     ...(ralphMode === "off"
