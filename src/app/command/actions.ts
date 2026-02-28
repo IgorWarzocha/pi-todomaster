@@ -96,10 +96,12 @@ async function runRalph(
     ctx.ui.notify("Ralph loop is disabled for this item.", "error");
     return "stay";
   }
-  const links = validateLinks(record);
-  if ("error" in links) {
-    ctx.ui.notify(links.error, "error");
-    return "stay";
+  if (mode === "ralph-loop-linked") {
+    const links = validateLinks(record);
+    if ("error" in links) {
+      ctx.ui.notify(links.error, "error");
+      return "stay";
+    }
   }
   const filePath = getTodoPath(todosDir, record.id, record.type);
   const linked = mode === "ralph-loop-linked" ? resolveLinkedPaths(record.links) : [];
