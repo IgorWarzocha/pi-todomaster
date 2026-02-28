@@ -39,8 +39,9 @@ export function prepareRalphLoop(
   const paths = unique([planPath, ...(mode === "ralph-loop-linked" ? linkedPaths : [])]);
   const targets = paths.map((item) => commandPath(cwd, item));
   const catArgs = targets.map((item) => shellQuote(item)).join(" ");
-  const command =
+  const shell =
     "AGENT_CMD='pi -p --no-session'; " +
     `while :; do cat ${catArgs} | bash -lc \"$AGENT_CMD\"; done`;
+  const command = `!!${shell}`;
   return { mode, inputPaths: paths, command };
 }
