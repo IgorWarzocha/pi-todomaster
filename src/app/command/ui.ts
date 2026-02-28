@@ -434,7 +434,8 @@ export async function runTodoUi(
         {
           title: `Actions: ${record.title || "(untitled)"}`,
           items: rows,
-          shortcuts: "j/k select • v detail • J/K scroll detail • enter confirm",
+          shortcuts:
+            "j/k select • space toggle loops • v detail • J/K scroll detail • enter confirm",
           page: 7,
           find: (item, query) =>
             `${item.label} ${item.description}`.toLowerCase().includes(query.toLowerCase()),
@@ -776,6 +777,11 @@ export async function runTodoUi(
       setActive(createInput);
     };
 
+    const keepActionsOpen = (action: TodoMenuAction): boolean =>
+      action === "toggle-ralph-loop" ||
+      action === "toggle-ralph-loop-linked" ||
+      action === "run-ralph-loop";
+
     const handleAction = async (action: TodoMenuAction): Promise<void> => {
       const record = selectedRecord;
       if (!record) return;
@@ -801,9 +807,14 @@ export async function runTodoUi(
         return;
       }
       const result = await applyTodoAction(todosDir, ctx, refresh, done, record, action, setPrompt);
-      if (result === "stay") {
+      if (result !== "stay") return;
+      if (!keepActionsOpen(action)) {
         goList();
+        return;
       }
+      const updated = await resolveById(record.id);
+      if (!updated) return;
+      await openActions(updated);
     };
 
     const runLeader = async (keyData: string): Promise<boolean> => {
@@ -919,6 +930,16 @@ export async function runTodoUi(
           if (up(data)) {
             actionList?.up();
             uiTui.requestRender();
+            return;
+          }
+          if (data === " ") {
+            const intent = actionList?.enter();
+            if (!intent || intent.type !== "action") return;
+            if (intent.name !== "toggle-ralph-loop" && intent.name !== "toggle-ralph-loop-linked")
+              return;
+            runAsync(async () => {
+              await handleAction(intent.name as TodoMenuAction);
+            });
             return;
           }
           if (enter(data)) {
