@@ -63,7 +63,7 @@ async function runWork(
   setPrompt: (value: string) => void,
 ): Promise<"stay" | "exit"> {
   if (ralphMode(record) !== "off") {
-    return runRalph(todosDir, record, ctx);
+    return runRalph(todosDir, record, ctx, done);
   }
   const links = validateLinks(record);
   if ("error" in links) {
@@ -93,6 +93,7 @@ async function runRalph(
   todosDir: string,
   record: TodoFrontMatter,
   ctx: ExtensionCommandContext,
+  done: () => void,
 ): Promise<"stay" | "exit"> {
   const mode = ralphMode(record);
   if (mode === "off") {
@@ -114,7 +115,8 @@ async function runRalph(
     `Ralph loop command staged in editor (${mode}, ${prepared.inputPaths.length} file(s)).`,
     "info",
   );
-  return "stay";
+  done();
+  return "exit";
 }
 
 export async function applyTodoAction(
@@ -168,7 +170,7 @@ export async function applyTodoAction(
     ctx.ui.notify(`Set Ralph loop mode to ${next} for "${record.title || "(untitled)"}"`, "info");
     return "stay";
   }
-  if (action === "run-ralph-loop") return runRalph(todosDir, record, ctx);
+  if (action === "run-ralph-loop") return runRalph(todosDir, record, ctx, done);
   if (action === "view") return "stay";
   if (action === "edit-checklist") return "stay";
   if (action === "attach-links") return "stay";
