@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { TodoRecord } from "../../core/types.js";
+import type { RalphLoopMode, TodoRecord } from "../../core/types.js";
 import { validateTodoId } from "../../core/parser.js";
 import { clearAssignmentIfClosed, displayTodoId, isTodoClosed } from "../../format/index.js";
 import { ensureTodoExists, writeTodoFile } from "../files/files.js";
@@ -119,6 +119,19 @@ export async function reopenTodoForUser(
     existing.status = "open";
     existing.assigned_to_session = undefined;
     existing.assigned_to_session_file = undefined;
+    await writeTodoFile(filePath, existing);
+    return existing;
+  });
+}
+
+export async function setTodoRalphLoopMode(
+  todosDir: string,
+  id: string,
+  mode: RalphLoopMode,
+  ctx: ExtensionContext,
+): Promise<TodoRecord | { error: string }> {
+  return withExisting(todosDir, id, ctx, async (existing, filePath) => {
+    existing.ralph_loop_mode = mode;
     await writeTodoFile(filePath, existing);
     return existing;
   });

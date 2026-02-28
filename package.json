@@ -16,6 +16,7 @@
     "verify": "bun run format && bun run typecheck && bun run format:check && bun run build"
   },
   "dependencies": {
+    "@howaboua/pi-howaboua-extensions-primitives-sdk": "^0.3.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

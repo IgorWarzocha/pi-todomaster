@@ -1,6 +1,12 @@
-import { Container, Spacer, Text, TUI, getEditorKeybindings } from "@mariozechner/pi-tui";
+import { Container, Spacer, Text, TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import {
+  down as keyDown,
+  enter as keyEnter,
+  esc as keyEsc,
+  up as keyUp,
+} from "@howaboua/pi-howaboua-extensions-primitives-sdk";
 
 interface Row {
   key: string;
@@ -53,7 +59,7 @@ export class ValidateSelectComponent extends Container {
       new Text(
         theme.fg(
           "dim",
-          "Order: PRDs -> Specs -> Todos • ↑↓ move • Space toggle • Enter apply • Esc back",
+          "Order: PRDs -> Specs -> Todos • ↑↓ or j/k move • Space toggle • Enter apply • Esc back",
         ),
         1,
         0,
@@ -101,30 +107,34 @@ export class ValidateSelectComponent extends Container {
   }
 
   handleInput(data: string): void {
-    const kb = getEditorKeybindings();
     const rows = this.list();
     if (!rows.length) {
-      if (data === "\u001b" || kb.matches(data, "selectCancel")) this.onCancel();
+      if (keyEsc(data) || data === "\u0003") this.onCancel();
       return;
     }
-    if (data === "\u001b" || kb.matches(data, "selectCancel") || data === "\u0003")
-      return this.onCancel();
-    if (data === "\u001b[A" || kb.matches(data, "selectUp") || data === "k") {
-      this.active = this.active === 0 ? rows.length - 1 : this.active - 1;
-      return this.renderState();
+    if (keyEsc(data) || data === "\u0003") {
+      this.onCancel();
+      return;
     }
-    if (data === "\u001b[B" || kb.matches(data, "selectDown") || data === "j") {
+    if (keyUp(data)) {
+      this.active = this.active === 0 ? rows.length - 1 : this.active - 1;
+      this.renderState();
+      return;
+    }
+    if (keyDown(data)) {
       this.active = this.active === rows.length - 1 ? 0 : this.active + 1;
-      return this.renderState();
+      this.renderState();
+      return;
     }
     if (data === " ") {
       const row = rows[this.active];
       if (!row) return;
       if (this.selected.has(row.key)) this.selected.delete(row.key);
       else this.selected.add(row.key);
-      return this.renderState();
+      this.renderState();
+      return;
     }
-    if (kb.matches(data, "selectConfirm") || data === "\r") {
+    if (keyEnter(data)) {
       const state: State = {
         prds: new Set<string>(),
         specs: new Set<string>(),
@@ -136,7 +146,7 @@ export class ValidateSelectComponent extends Container {
         if (row.type === "spec") state.specs.add(row.key);
         if (row.type === "todo") state.todos.add(row.key);
       }
-      return this.onSubmit(state);
+      this.onSubmit(state);
     }
   }
 }

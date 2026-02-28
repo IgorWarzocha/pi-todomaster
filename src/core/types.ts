@@ -18,6 +18,8 @@ export interface TodoWorktree {
   branch?: string;
 }
 
+export type RalphLoopMode = "off" | "ralph-loop" | "ralph-loop-linked";
+
 export interface TodoFrontMatter {
   id: string;
   title: string;
@@ -33,6 +35,7 @@ export interface TodoFrontMatter {
   links?: TodoLinks;
   agent_rules?: string;
   worktree?: TodoWorktree;
+  ralph_loop_mode?: RalphLoopMode;
 }
 
 export interface TodoRecord extends TodoFrontMatter {
@@ -73,6 +76,9 @@ export type TodoMenuAction =
   | "validate-links"
   | "audit"
   | "edit-checklist"
+  | "toggle-ralph-loop"
+  | "toggle-ralph-loop-linked"
+  | "run-ralph-loop"
   | "copyPath"
   | "copyText"
   | "view";

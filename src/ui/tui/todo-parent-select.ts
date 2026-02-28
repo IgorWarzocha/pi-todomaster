@@ -1,14 +1,14 @@
-import {
-  Container,
-  Key,
-  Spacer,
-  Text,
-  TUI,
-  getEditorKeybindings,
-  matchesKey,
-} from "@mariozechner/pi-tui";
+import { Container, Spacer, Text, TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import {
+  backtab as keyBacktab,
+  down as keyDown,
+  enter as keyEnter,
+  esc as keyEsc,
+  tab as keyTab,
+  up as keyUp,
+} from "@howaboua/pi-howaboua-extensions-primitives-sdk";
 import type { TodoFrontMatter } from "../../core/types.js";
 
 const NONE = "__NONE__";
@@ -123,8 +123,8 @@ export class TodoParentSelectComponent extends Container {
       const row = rows[index];
       const mark = active.has(row.id) ? "[x]" : "[ ]";
       const pointer = index === this.selected ? this.theme.fg("accent", "→ ") : "  ";
-      const color = index === this.selected ? "accent" : "text";
-      this.list.addChild(new Text(`${pointer}${mark} ${this.theme.fg(color, row.title)}`, 0, 0));
+      const title = index === this.selected ? this.theme.fg("accent", row.title) : row.title;
+      this.list.addChild(new Text(`${pointer}${mark} ${title}`, 0, 0));
     }
     for (let index = end - start; index < ROWS; index += 1) {
       this.list.addChild(new Text("⠀", 0, 0));
@@ -139,39 +139,30 @@ export class TodoParentSelectComponent extends Container {
   }
 
   handleInput(data: string): void {
-    const kb = getEditorKeybindings();
-    if (data === "\u001b[A") {
-      const rows = this.rows();
-      this.selected = this.selected === 0 ? rows.length - 1 : this.selected - 1;
-      return this.renderState();
+    if (keyEsc(data) || data === "\u0003") {
+      this.onCancel();
+      return;
     }
-    if (data === "\u001b[B") {
-      const rows = this.rows();
-      this.selected = this.selected === rows.length - 1 ? 0 : this.selected + 1;
-      return this.renderState();
-    }
-    if (data === "\u001b" || kb.matches(data, "selectCancel") || data === "\u0003")
-      return this.onCancel();
-    if (
-      matchesKey(data, Key.tab) ||
-      data === "\t" ||
-      data === "\u0009" ||
-      data === "\u001b[Z" ||
-      data === "\u001b[1;2Z"
-    ) {
+    if (keyTab(data) || keyBacktab(data)) {
       this.tab = this.tab === "prds" ? "specs" : "prds";
       this.selected = 0;
-      return this.renderState();
+      this.renderState();
+      return;
     }
-    if (kb.matches(data, "selectConfirm") || data === "\r") return this.confirm();
+    if (keyEnter(data)) {
+      this.confirm();
+      return;
+    }
     const rows = this.rows();
-    if (kb.matches(data, "selectUp") || data === "k") {
+    if (keyUp(data)) {
       this.selected = this.selected === 0 ? rows.length - 1 : this.selected - 1;
-      return this.renderState();
+      this.renderState();
+      return;
     }
-    if (kb.matches(data, "selectDown") || data === "j") {
+    if (keyDown(data)) {
       this.selected = this.selected === rows.length - 1 ? 0 : this.selected + 1;
-      return this.renderState();
+      this.renderState();
+      return;
     }
     if (data !== " ") return;
     const row = rows[this.selected];
@@ -181,7 +172,8 @@ export class TodoParentSelectComponent extends Container {
       this.specSet.clear();
       this.prdSet.add(NONE);
       this.specSet.add(NONE);
-      return this.renderState();
+      this.renderState();
+      return;
     }
     this.clearNone();
     const active = this.activeSet();

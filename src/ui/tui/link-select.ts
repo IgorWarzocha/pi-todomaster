@@ -1,14 +1,14 @@
-import {
-  Container,
-  Key,
-  Spacer,
-  Text,
-  TUI,
-  getEditorKeybindings,
-  matchesKey,
-} from "@mariozechner/pi-tui";
+import { Container, Spacer, Text, TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import {
+  backtab as keyBacktab,
+  down as keyDown,
+  enter as keyEnter,
+  esc as keyEsc,
+  tab as keyTab,
+  up as keyUp,
+} from "@howaboua/pi-howaboua-extensions-primitives-sdk";
 import type { TodoFrontMatter } from "../../core/types.js";
 
 const ROWS = 9;
@@ -122,36 +122,37 @@ export class LinkSelectComponent extends Container {
   }
 
   handleInput(data: string): void {
-    const kb = getEditorKeybindings();
-    if (data === "\u001b[A") {
-      const rows = this.rows();
-      this.selected = this.selected === 0 ? Math.max(0, rows.length - 1) : this.selected - 1;
-      return this.renderState();
+    if (keyEsc(data) || data === "\u0003") {
+      this.onCancel();
+      return;
     }
-    if (data === "\u001b[B") {
-      const rows = this.rows();
-      this.selected = this.selected === Math.max(0, rows.length - 1) ? 0 : this.selected + 1;
-      return this.renderState();
-    }
-    if (data === "\u001b" || kb.matches(data, "selectCancel") || data === "\u0003")
-      return this.onCancel();
-    if (matchesKey(data, Key.tab) || data === "\t" || data === "\u0009") {
+    if (keyTab(data)) {
       this.tab = this.tab === "prds" ? "specs" : this.tab === "specs" ? "todos" : "prds";
       this.selected = 0;
-      return this.renderState();
+      this.renderState();
+      return;
     }
-    if (kb.matches(data, "selectConfirm") || data === "\r") {
-      return this.onSubmit({ prds: this.prdSet, specs: this.specSet, todos: this.todoSet });
+    if (keyBacktab(data)) {
+      this.tab = this.tab === "prds" ? "todos" : this.tab === "specs" ? "prds" : "specs";
+      this.selected = 0;
+      this.renderState();
+      return;
     }
-    if (kb.matches(data, "selectUp") || data === "k") {
+    if (keyEnter(data)) {
+      this.onSubmit({ prds: this.prdSet, specs: this.specSet, todos: this.todoSet });
+      return;
+    }
+    if (keyUp(data)) {
       const rows = this.rows();
       this.selected = this.selected === 0 ? Math.max(0, rows.length - 1) : this.selected - 1;
-      return this.renderState();
+      this.renderState();
+      return;
     }
-    if (kb.matches(data, "selectDown") || data === "j") {
+    if (keyDown(data)) {
       const rows = this.rows();
       this.selected = this.selected === Math.max(0, rows.length - 1) ? 0 : this.selected + 1;
-      return this.renderState();
+      this.renderState();
+      return;
     }
     if (data !== " ") return;
     const row = this.rows()[this.selected];
