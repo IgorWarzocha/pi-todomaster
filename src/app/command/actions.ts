@@ -110,12 +110,13 @@ async function runRalph(
   const filePath = getTodoPath(todosDir, record.id, record.type);
   const linked = mode === "ralph-loop-linked" ? resolveLinkedPaths(record.links) : [];
   const prepared = prepareRalphLoop(ctx.cwd, mode, filePath, linked);
-  ctx.ui.setEditorText(prepared.command);
-  ctx.ui.notify(
-    `Ralph loop command staged in editor (${mode}, ${prepared.inputPaths.length} file(s)).`,
-    "info",
-  );
+  const command = prepared.command;
+  const notice = `Ralph loop command staged in editor (${mode}, ${prepared.inputPaths.length} file(s)).`;
   done();
+  setTimeout(() => {
+    ctx.ui.setEditorText(command);
+    ctx.ui.notify(notice, "info");
+  }, 0);
   return "exit";
 }
 
