@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
+import path from "node:path";
 import crypto from "node:crypto";
 import type { TodoRecord } from "../../core/types.js";
 import { parseTodoContent, serializeTodo } from "../../core/parser.js";
@@ -16,6 +17,7 @@ export async function readTodoFile(filePath: string, idFallback: string): Promis
 
 export async function writeTodoFile(filePath: string, todo: TodoRecord): Promise<void> {
   todo.modified_at = new Date().toISOString();
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, serializeTodo(todo), "utf8");
 }
 
