@@ -3,24 +3,55 @@
   "version": "0.1.0",
   "description": "TodoMaster extension for Pi",
   "keywords": [
+    "pi",
+    "pi-coding-agent",
     "pi-extension",
-    "pi-package"
+    "pi-package",
+    "planning",
+    "todo"
   ],
+  "homepage": "https://github.com/IgorWarzocha/pi-todomaster#readme",
+  "bugs": {
+    "url": "https://github.com/IgorWarzocha/pi-todomaster/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IgorWarzocha/pi-todomaster.git"
+  },
+  "files": [
+    "index.ts",
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "bun build ./index.ts --target=node --format=esm --outfile ./dist/index.js --external @mariozechner/pi-ai --external @mariozechner/pi-coding-agent --external @mariozechner/pi-tui",
-    "typecheck": "bunx tsc -p ./tsconfig.json",
+    "clean": "rm -rf ./dist",
+    "build": "npm run clean && tsc -p ./tsconfig.build.json && chmod +x ./dist/src/app/cli/index.js",
+    "typecheck": "tsc -p ./tsconfig.json",
     "format:check": "oxfmt --check .",
     "format": "oxfmt .",
-    "verify": "bun run format && bun run typecheck && bun run format:check && bun run build"
+    "check": "npm run typecheck && npm run format:check",
+    "verify": "npm run format && npm run check && npm run build",
+    "prepare": "npm run build",
+    "publish:dry-run": "npm publish --dry-run",
+    "publish:dev": "npm publish --tag dev",
+    "release:dev": "npm version prerelease --preid dev && npm publish --tag dev",
+    "prepack": "npm run check && npm run build",
+    "prepublishOnly": "npm run check"
   },
   "dependencies": {
     "@howaboua/pi-howaboua-extensions-primitives-sdk": "^0.3.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@types/node": "^24.3.0"
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",

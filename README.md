@@ -53,3 +53,40 @@ Plan files are stored in:
 - `.pi/plans/todos`
 
 Each item is markdown with frontmatter and uses `type` (`prd`, `spec`, `todo`) for classification.
+
+## Install
+
+```bash
+pi install npm:@howaboua/pi-todomaster
+```
+
+Local package development:
+
+```bash
+npm install
+npm run build
+```
+
+## Publish on npm
+
+This package is configured for public npm publishing and Pi registry discovery:
+
+- `keywords` include `pi-package` and `pi-extension`
+- `publishConfig.access` is set to `public`
+- the published tarball includes the source extension entrypoint plus the built Node CLI helper under `dist/`
+
+Useful commands:
+
+```bash
+npm run publish:dry-run
+npm run publish:dev
+npm run release:dev
+```
+
+Typical release flow:
+
+```bash
+npm login
+npm run publish:dry-run
+npm publish
+```

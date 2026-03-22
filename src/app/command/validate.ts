@@ -22,7 +22,7 @@ interface Result {
 
 export function runValidateCli(cli: string, cwd: string, filePath: string): Result {
   const target = path.resolve(filePath);
-  const out = execFileSync("bun", [cli, "--validate", "--filepath", target], {
+  const out = execFileSync("node", [cli, "--validate", "--filepath", target], {
     cwd,
     env: { ...process.env, PI_TODOS_CWD: cwd },
     encoding: "utf8",
